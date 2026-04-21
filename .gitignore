@@ -1,5 +1,6 @@
 # Created: 18:59 21-Apr-2026
 # Updated: 23:52 21-Apr-2026
+# Updated: 00:51 22-Apr-2026
 .venv/
 .venv-build/
 __pycache__/
@@ -17,3 +18,7 @@ build/
 # dist/ holds the built .app and DMG. We keep the DMG (in releases/)
 # but ignore the raw dist directory itself.
 dist/
+
+# Internal dev handoff notes — local-only, not for public repo
+HANDOFF.md
+NOTES.md
