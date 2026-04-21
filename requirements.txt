@@ -1,0 +1,9 @@
+# Created: 18:59 21-Apr-2026
+# Updated: 21:31 21-Apr-2026
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+jinja2==3.1.4
+# FSEvents-backed file watcher so the collector can react within
+# seconds to browser history writes (instead of waiting for the
+# next 45–60 s tick).
+watchdog==5.0.3

@@ -1,0 +1,19 @@
+# Created: 18:59 21-Apr-2026
+# Updated: 23:52 21-Apr-2026
+.venv/
+.venv-build/
+__pycache__/
+*.pyc
+.DS_Store
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+collector.log
+tmp/
+
+# py2app build outputs — regenerate with ./build_app.sh
+build/
+# dist/ holds the built .app and DMG. We keep the DMG (in releases/)
+# but ignore the raw dist directory itself.
+dist/

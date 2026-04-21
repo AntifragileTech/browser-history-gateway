@@ -1,0 +1,498 @@
+<!-- Created: 18:59 21-Apr-2026 -->
+<!-- Updated: 20:17 21-Apr-2026 -->
+<!-- Updated: 20:19 21-Apr-2026 -->
+<!-- Updated: 20:22 21-Apr-2026 -->
+<!-- Updated: 20:24 21-Apr-2026 -->
+<!-- Updated: 20:26 21-Apr-2026 -->
+<!-- Updated: 20:49 21-Apr-2026 -->
+<!-- Updated: 21:32 21-Apr-2026 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Browser History Gateway</title>
+<style>
+  :root {
+    --fg: #e8e8e8; --bg: #111; --muted: #888; --accent: #5eb3ff;
+    --border: #222; --row: #181818; --row-alt: #141414;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+         color: var(--fg); background: var(--bg); }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex;
+           align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .sync-bar { display: flex; align-items: center; gap: 10px; font-size: 12px;
+              color: var(--muted); }
+  .sync-bar .sync-label { white-space: nowrap; }
+  .sync-bar .sync-sep { color: #333; }
+  .sync-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+              background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+  .sync-dot.syncing { background: #facc15; box-shadow: 0 0 8px #facc15;
+                      animation: pulse 1.1s infinite; }
+  .sync-dot.stale   { background: #f87171; box-shadow: 0 0 6px #f87171; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
+  button.sync-btn { height: 28px; padding: 2px 10px; font-size: 12px;
+                    background: #1a1a1a; color: var(--fg);
+                    border: 1px solid var(--border); border-radius: 4px;
+                    cursor: pointer; }
+  button.sync-btn:hover { border-color: var(--accent); color: var(--accent); }
+  button.sync-btn:disabled { opacity: 0.5; cursor: wait; }
+  .count { font-size: 13px; }
+  .count .range { color: var(--fg); font-weight: 600; }
+  .count .total { color: var(--accent); font-weight: 600; }
+  .count .hint  { color: var(--muted); font-size: 11px; margin-left: 8px; }
+
+  form.filters { padding: 12px 20px; border-bottom: 1px solid var(--border); }
+  .row1 { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 0.8fr auto;
+          gap: 8px; align-items: end; }
+  .row2 { margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .row2 .label { color: var(--muted); font-size: 11px; margin-right: 4px; }
+  form.filters label { display: flex; flex-direction: column; font-size: 11px;
+                       color: var(--muted); gap: 3px; }
+  /* All form controls get a shared size so dropdowns, date inputs, and
+     text inputs visually line up in the filter grid. */
+  input, select, button {
+    font: inherit; color: var(--fg); background: #1a1a1a;
+    border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px;
+    height: 32px; box-sizing: border-box;
+  }
+  form.filters input, form.filters select, form.filters button.primary {
+    width: 100%;
+  }
+  input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #000; font-weight: 600; cursor: pointer; border: none; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.preset { background: #1a1a1a; color: var(--fg); cursor: pointer; padding: 4px 10px;
+                  font-size: 12px; border: 1px solid var(--border); border-radius: 3px; }
+  button.preset:hover { border-color: var(--accent); color: var(--accent); }
+  button.preset.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  button.clear { background: transparent; color: var(--muted); border: 1px solid var(--border);
+                 font-size: 12px; padding: 4px 10px; cursor: pointer; border-radius: 3px; }
+  button.clear:hover { color: #ff8a8a; border-color: #ff8a8a; }
+
+  .sticky-top { position: sticky; top: 0; background: var(--bg); z-index: 20;
+                 box-shadow: 0 1px 0 var(--border); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  /* Thead sits just below the sticky-top filter block. JS sets its
+     CSS custom property --stick-offset at load based on the measured
+     height of .sticky-top, keeping it pinned when the user scrolls. */
+  thead { position: sticky; top: var(--stick-offset, 0); background: var(--bg); z-index: 10; }
+  thead th { background: #161616; border-bottom: 1px solid var(--border); }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  /* Serial number column: narrow, right-aligned, muted. */
+  td.serial, th.serial { width: 64px; text-align: right;
+                         color: var(--muted); font-variant-numeric: tabular-nums;
+                         font-size: 12px; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  tr:nth-child(even) td { background: var(--row-alt); }
+  tr:nth-child(odd) td  { background: var(--row); }
+  .url a { color: var(--accent); text-decoration: none; }
+  .url a:hover { text-decoration: underline; }
+  .title { color: var(--muted); font-size: 12px; margin-top: 2px; overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; max-width: 600px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+         background: #222; color: var(--muted); }
+  .tag.browser { background: #1a2e42; color: #9bc9ff; }
+  .tag.profile { background: #2a1e3a; color: #c89bff; }
+  .url-cell { max-width: 700px; overflow: hidden; }
+  .url-cell .u { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* When a search query is active, let URL + title wrap fully so every
+     highlighted match is visible. Break on any character because URLs
+     rarely contain word boundaries. */
+  body.searching .url-cell { max-width: none; }
+  body.searching .url-cell .u,
+  body.searching .url-cell .title { white-space: normal; word-break: break-all; overflow-wrap: anywhere; }
+  body.searching .title { max-width: none; }
+  .domain-link { color: var(--muted); text-decoration: none; }
+  .domain-link:hover { color: var(--accent); }
+  /* Highlighted matches — high contrast yellow, works in both themes. */
+  mark { background: #facc15; color: #000; padding: 0 2px; border-radius: 2px;
+         box-shadow: 0 0 0 1px #fbbf24; font-weight: 600; }
+
+  nav.pager { padding: 14px 20px; border-top: 1px solid var(--border); display: flex;
+              gap: 8px; align-items: center; justify-content: center; font-size: 13px; flex-wrap: wrap; }
+  nav.pager a, nav.pager span.current, nav.pager span.ellipsis {
+    display: inline-block; padding: 5px 10px; border-radius: 3px; text-decoration: none;
+    color: var(--fg); background: #1a1a1a; border: 1px solid var(--border); min-width: 32px;
+    text-align: center;
+  }
+  nav.pager a:hover { border-color: var(--accent); color: var(--accent); }
+  nav.pager span.current { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  nav.pager span.ellipsis { border: none; background: transparent; color: var(--muted); }
+  nav.pager a.disabled { pointer-events: none; opacity: 0.3; }
+  nav.pager .jump { display: flex; gap: 6px; align-items: center; margin-left: 16px; color: var(--muted); }
+  nav.pager .jump input { width: 70px; }
+</style>
+</head>
+<body class="{% if q %}searching{% endif %}">
+<div class="sticky-top">
+<header>
+  <h1>Browser History Gateway</h1>
+  <div class="count">
+    {% if total %}
+      <span class="range">{{ '{:,}'.format(range_start) }}&ndash;{{ '{:,}'.format(range_end) }}</span>
+      of <span class="total">{{ '{:,}'.format(total) }}</span> matching visits
+      <span class="hint">(page {{ page }} of {{ total_pages }})</span>
+    {% else %}
+      <span class="total">0</span> visits match
+    {% endif %}
+  </div>
+  <div class="sync-bar" id="sync-bar">
+    <span class="sync-dot" id="sync-dot"></span>
+    <span class="sync-label" id="sync-status">Synced —</span>
+    <span class="sync-sep">·</span>
+    <span class="sync-label" id="sync-countdown">Next sync —</span>
+    <button type="button" class="sync-btn" id="sync-now-btn" title="Run a collection pass now">⟳ Sync now</button>
+    <button type="button" class="sync-btn" id="refresh-btn" title="Reload the current page (keeps filters)">↻ Refresh</button>
+  </div>
+</header>
+
+<form class="filters" method="get" action="/" id="filters">
+  <div class="row1">
+    <label>Search URL or title
+      <input type="text" name="q" value="{{ q }}" placeholder="github.com, invoice, claude..." autocomplete="off">
+    </label>
+    <label>Browser
+      <select name="browser">
+        <option value="">all</option>
+        {% for b in browsers %}<option value="{{ b }}" {% if b == browser %}selected{% endif %}>{{ b }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Profile
+      <select name="profile">
+        <option value="">all</option>
+        {% for p in profiles %}
+          <option value="{{ p.value }}" {% if p.value == profile %}selected{% endif %}>
+            {% if p.label != p.value %}{{ p.label }} ({{ p.value }}){% else %}{{ p.value }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Domain
+      <input type="text" name="domain" value="{{ domain }}" placeholder="github.com" autocomplete="off">
+    </label>
+    <label>From
+      <input type="date" name="date_from" id="date_from" value="{{ date_from }}">
+    </label>
+    <label>To
+      <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
+    </label>
+    <label>Per page
+      <select name="page_size">
+        {% for n in [100, 250, 500, 1000, 2000, 5000] %}
+        <option value="{{ n }}" {% if n == page_size %}selected{% endif %}>{{ '{:,}'.format(n) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="primary">Search</button>
+  </div>
+  <div class="row2">
+    <span class="label">Quick range:</span>
+    <button type="button" class="preset" data-range="today">Today</button>
+    <button type="button" class="preset" data-range="yesterday">Yesterday</button>
+    <button type="button" class="preset" data-range="this-week">This week</button>
+    <button type="button" class="preset" data-range="7">Last 7 days</button>
+    <button type="button" class="preset" data-range="this-month">This month</button>
+    <button type="button" class="preset" data-range="30">Last 30 days</button>
+    {% for m in month_presets %}
+      <button type="button" class="preset" data-range="month"
+              data-from="{{ m.date_from }}" data-to="{{ m.date_to }}">{{ m.label }}</button>
+    {% endfor %}
+    <button type="button" class="preset" data-range="all">All time</button>
+    <button type="button" class="clear" id="clear-all">Clear filters</button>
+  </div>
+  {% if default_applied %}
+  <div class="row2" style="color: var(--muted); font-size: 11px;">
+    Default view: last 30 days. Click <b>All time</b> above to see everything.
+  </div>
+  {% endif %}
+</form>
+</div><!-- /.sticky-top -->
+
+<table>
+  <thead>
+    <tr>
+      <th class="serial" title="Row number — #1 is most recent within current filter">#</th>
+      <th>When</th>
+      <th>Browser / Profile</th>
+      <th>URL / Title</th>
+      <th>Domain</th>
+      <th>Transition</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in results %}
+    <tr>
+      <td class="serial">{{ '{:,}'.format(r.serial) }}</td>
+      <td>{{ r.visited_at }}</td>
+      <td>
+        <span class="tag browser">{{ r.browser }}</span>
+        <span class="tag profile" title="folder: {{ r.profile }}">{{ r.profile_display }}</span>
+      </td>
+      <td class="url-cell">
+        <div class="u url"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.url_html|safe }}</a></div>
+        {% if r.title %}<div class="title">{{ r.title_html|safe }}</div>{% endif %}
+      </td>
+      <td><a class="domain-link" href="/?domain={{ r.domain }}&page_size={{ page_size }}">{{ r.domain_html|safe }}</a></td>
+      <td><span class="tag">{{ r.transition }}</span></td>
+    </tr>
+    {% endfor %}
+    {% if not results %}
+    <tr><td colspan="6" style="text-align:center; padding:40px; color: var(--muted);">No visits match these filters.</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+
+{% if total_pages > 1 %}
+{%- set qs = ('?' ~ base_qs ~ '&') if base_qs else '?' -%}
+<nav class="pager">
+  <a href="{{ qs }}page=1" class="{% if page == 1 %}disabled{% endif %}" title="First">« First</a>
+  <a href="{{ qs }}page={{ page - 1 if page > 1 else 1 }}" class="{% if page == 1 %}disabled{% endif %}" title="Previous">‹ Prev</a>
+
+  {# Build compact page list: 1, ..., page-2, page-1, page, page+1, page+2, ..., last #}
+  {%- set window = [] -%}
+  {%- set _ = window.append(1) -%}
+  {%- for p in range(page - 2, page + 3) if p > 1 and p < total_pages -%}
+    {%- set _ = window.append(p) -%}
+  {%- endfor -%}
+  {%- if total_pages > 1 -%}{%- set _ = window.append(total_pages) -%}{%- endif -%}
+  {%- set unique_window = [] -%}
+  {%- for p in window -%}{%- if p not in unique_window -%}{%- set _ = unique_window.append(p) -%}{%- endif -%}{%- endfor -%}
+
+  {%- set ns = namespace(prev=0) -%}
+  {%- for p in unique_window -%}
+    {%- if ns.prev and p > ns.prev + 1 -%}<span class="ellipsis">…</span>{%- endif -%}
+    {%- if p == page -%}
+      <span class="current">{{ p }}</span>
+    {%- else -%}
+      <a href="{{ qs }}page={{ p }}">{{ p }}</a>
+    {%- endif -%}
+    {%- set ns.prev = p -%}
+  {%- endfor -%}
+
+  <a href="{{ qs }}page={{ page + 1 if page < total_pages else total_pages }}" class="{% if page == total_pages %}disabled{% endif %}" title="Next">Next ›</a>
+  <a href="{{ qs }}page={{ total_pages }}" class="{% if page == total_pages %}disabled{% endif %}" title="Last">Last »</a>
+
+  <form method="get" action="/" class="jump" style="display:flex;">
+    {# Preserve filters on jump #}
+    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    {% if browser %}<input type="hidden" name="browser" value="{{ browser }}">{% endif %}
+    {% if profile %}<input type="hidden" name="profile" value="{{ profile }}">{% endif %}
+    {% if domain %}<input type="hidden" name="domain" value="{{ domain }}">{% endif %}
+    {% if date_from %}<input type="hidden" name="date_from" value="{{ date_from }}">{% endif %}
+    {% if date_to %}<input type="hidden" name="date_to" value="{{ date_to }}">{% endif %}
+    <input type="hidden" name="page_size" value="{{ page_size }}">
+    <span>Go to page</span>
+    <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}">
+    <button type="submit" class="primary" style="padding:4px 10px;">Go</button>
+  </form>
+</nav>
+{% endif %}
+
+<script>
+  // Quick-range presets: set From/To inputs and submit (page reset to 1).
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  document.querySelectorAll('button.preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const from = document.getElementById('date_from');
+      const to   = document.getElementById('date_to');
+      const form = document.getElementById('filters');
+      const range = btn.dataset.range;
+      const today = new Date();
+
+      // Drop any stale scope=all marker from previous All-time click.
+      form.querySelectorAll('input[name="scope"]').forEach(n => n.remove());
+
+      if (range === 'all') {
+        // Explicit override of the server-side default-last-30-days.
+        from.value = ''; to.value = '';
+        const scope = document.createElement('input');
+        scope.type = 'hidden'; scope.name = 'scope'; scope.value = 'all';
+        form.appendChild(scope);
+      }
+      else if (range === 'today')     { from.value = fmt(today); to.value = fmt(today); }
+      else if (range === 'yesterday') {
+        const y = new Date(today); y.setDate(y.getDate() - 1);
+        from.value = fmt(y); to.value = fmt(y);
+      }
+      else if (range === 'this-week') {
+        // Week starts Monday. getDay(): Sun=0, Mon=1, ... Sat=6.
+        const d = new Date(today);
+        const dow = d.getDay();
+        const daysSinceMonday = (dow + 6) % 7;  // Mon=0 ... Sun=6
+        d.setDate(d.getDate() - daysSinceMonday);
+        from.value = fmt(d); to.value = fmt(today);
+      }
+      else if (range === 'this-month') {
+        const first = new Date(today.getFullYear(), today.getMonth(), 1);
+        from.value = fmt(first); to.value = fmt(today);
+      }
+      else if (range === 'month') {
+        // Specific month button — explicit data-from / data-to.
+        from.value = btn.dataset.from; to.value = btn.dataset.to;
+      }
+      else {
+        // Numeric N = last N days.
+        const days = parseInt(range, 10);
+        const start = new Date(today); start.setDate(start.getDate() - days + 1);
+        from.value = fmt(start); to.value = fmt(today);
+      }
+      // Reset to page 1 on any preset click.
+      form.querySelectorAll('input[name="page"]').forEach(n => n.remove());
+      form.submit();
+    });
+  });
+
+  document.getElementById('clear-all').addEventListener('click', () => { window.location = '/'; });
+
+  (function highlightActive() {
+    const from  = {{ date_from|tojson }};
+    const to    = {{ date_to|tojson }};
+    const scope = {{ scope|tojson }};
+
+    // Month-specific buttons carry their own dates: match exactly.
+    document.querySelectorAll('button.preset[data-range="month"]').forEach(btn => {
+      if (btn.dataset.from === from && btn.dataset.to === to) {
+        btn.classList.add('active');
+      }
+    });
+
+    if (scope === 'all') {
+      document.querySelector('button.preset[data-range="all"]')?.classList.add('active');
+    }
+  })();
+
+  // ---- Sync status + countdown + Sync Now + Refresh ----
+  (function syncBar() {
+    const statusEl    = document.getElementById('sync-status');
+    const countdownEl = document.getElementById('sync-countdown');
+    const dot         = document.getElementById('sync-dot');
+    const syncBtn     = document.getElementById('sync-now-btn');
+    const refreshBtn  = document.getElementById('refresh-btn');
+
+    // Server-side authoritative timestamps (seconds since epoch).
+    let state = { last_sync_at: 0, next_sync_at: 0, interval_s: 0, server_time: 0 };
+    // Skew between the server's clock and ours, so our per-second tick
+    // stays accurate even if the laptop clock drifts.
+    let skew = 0;
+    // Record last_sync_at at page load. When the server's value advances
+    // past this, we know a sync completed while the user was looking at
+    // this page — reload to pull in any new rows.
+    let baselineSyncAt = null;
+
+    const fmtAgo = (s) => {
+      if (s < 0) return 'just now';
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ${s % 60}s ago`;
+      const h = Math.floor(m / 60);
+      return `${h}h ${m % 60}m ago`;
+    };
+    const fmtIn = (s) => {
+      if (s <= 0) return 'due now';
+      if (s < 60) return `in ${s}s`;
+      const m = Math.floor(s / 60);
+      return `in ${m}m ${s % 60}s`;
+    };
+
+    async function fetchStatus({ allowReload = true } = {}) {
+      try {
+        const r = await fetch('/api/sync-status');
+        const next = await r.json();
+        skew = next.server_time - Math.floor(Date.now() / 1000);
+        // First poll establishes the baseline so we don't instant-reload.
+        if (baselineSyncAt === null) {
+          baselineSyncAt = next.last_sync_at || 0;
+        } else if (allowReload && next.last_sync_at > baselineSyncAt) {
+          // A sync completed since we loaded. Save scroll then reload
+          // with the same URL (filters preserved).
+          try { sessionStorage.setItem('bhg_scroll', String(window.scrollY)); } catch {}
+          window.location.reload();
+          return;
+        }
+        state = next;
+      } catch {}
+    }
+
+    // Restore scroll after auto-reload.
+    window.addEventListener('load', () => {
+      try {
+        const y = sessionStorage.getItem('bhg_scroll');
+        if (y !== null) {
+          window.scrollTo(0, parseInt(y, 10) || 0);
+          sessionStorage.removeItem('bhg_scroll');
+        }
+      } catch {}
+    });
+
+    function tick() {
+      const now = Math.floor(Date.now() / 1000) + skew;
+      if (state.last_sync_at) {
+        statusEl.textContent = `Synced ${fmtAgo(now - state.last_sync_at)}`;
+      } else {
+        statusEl.textContent = 'Waiting for first sync…';
+      }
+      if (state.next_sync_at) {
+        const remain = state.next_sync_at - now;
+        countdownEl.textContent = `Next sync ${fmtIn(remain)}`;
+        dot.classList.remove('stale', 'syncing');
+        if (remain <= 0) dot.classList.add('syncing');
+        else if (now - state.last_sync_at > (state.interval_s || 60) * 3) dot.classList.add('stale');
+      } else {
+        countdownEl.textContent = 'Next sync —';
+      }
+    }
+
+    syncBtn.addEventListener('click', async () => {
+      syncBtn.disabled = true;
+      dot.classList.add('syncing');
+      statusEl.textContent = 'Syncing…';
+      try {
+        await fetch('/api/sync-now', { method: 'POST' });
+        // Poll aggressively until last_sync_at advances past the baseline.
+        // Once it does, fetchStatus itself triggers the auto-reload.
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          await fetchStatus();  // may reload mid-loop
+          tick();
+        }
+      } finally {
+        syncBtn.disabled = false;
+      }
+    });
+
+    // "Refresh" = reload this view without forcing a new collection,
+    // so you immediately see rows that a background sync already ingested.
+    refreshBtn.addEventListener('click', () => {
+      try { sessionStorage.setItem('bhg_scroll', String(window.scrollY)); } catch {}
+      window.location.reload();
+    });
+
+    // Initial status fetch must NOT auto-reload — it's setting the baseline.
+    fetchStatus({ allowReload: false }).then(tick);
+    setInterval(tick, 1000);
+    setInterval(() => fetchStatus().then(tick), 15000);
+  })();
+
+  // Keep the table header row pinned just below the sticky filter block.
+  // Measure the filter block once at load and on resize; set the CSS
+  // custom property `--stick-offset` that thead's `top:` reads from.
+  (function pinThead() {
+    const stickyTop = document.querySelector('.sticky-top');
+    if (!stickyTop) return;
+    const apply = () => {
+      const h = stickyTop.getBoundingClientRect().height;
+      document.documentElement.style.setProperty('--stick-offset', `${h}px`);
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    // Also re-measure after ~150ms in case web fonts shifted heights.
+    setTimeout(apply, 150);
+  })();
+</script>
+</body>
+</html>

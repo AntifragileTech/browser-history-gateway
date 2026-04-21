@@ -1,0 +1,11 @@
+# Created: 20:40 21-Apr-2026
+# Updated: 20:58 21-Apr-2026
+# Build-time deps for packaging as a macOS .app.
+# Install into a separate venv: python3 -m venv .venv-build
+-r requirements.txt
+rumps==0.4.0
+py2app==0.28.8
+# WebKit framework gives us a native WKWebView we can embed inside an
+# NSWindow, so the search UI shows in an in-app window instead of
+# needing an external browser tab.
+pyobjc-framework-WebKit==11.1

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created: 18:59 21-Apr-2026 -->
+<!-- Updated: 20:31 21-Apr-2026 -->
+<!-- Template file. Do NOT edit paths by hand — run ./install.sh which
+     substitutes __PROJECT_DIR__, __VENV_PYTHON__, __HOME__ and writes the
+     real plist to ~/Library/LaunchAgents/com.user.browserhistory.plist.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.browserhistory</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV_PYTHON__</string>
+        <string>-m</string>
+        <string>collector.run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <!-- Collection interval in seconds. 600 = every 10 min.
+         Override with: ./install.sh --interval 300 -->
+    <key>StartInterval</key>
+    <integer>__INTERVAL__</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/.browser-history/collector.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__HOME__/.browser-history/collector.stderr.log</string>
+</dict>
+</plist>
