@@ -1,0 +1,100 @@
+# Created: 00:30 22-Apr-2026
+# Build native DMGs for Intel (macos-13) and Apple Silicon (macos-14).
+# Every push to main -> refreshes the "latest" pre-release with both DMGs.
+# Every git tag v*   -> creates a stable Release with both DMGs + notes.
+name: Build macOS DMGs
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to publish GitHub Releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13   # Intel x86_64 runner
+            arch: intel
+          - os: macos-14   # Apple Silicon arm64 runner
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build .app + DMG (native ${{ matrix.arch }})
+        run: |
+          chmod +x build_app.sh
+          ./build_app.sh --dmg --clean
+
+      - name: Rename DMG with architecture suffix
+        run: |
+          mv "dist/Browser History Gateway.dmg" \
+             "dist/Browser-History-Gateway-${{ matrix.arch }}.dmg"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: dist/Browser-History-Gateway-${{ matrix.arch }}.dmg
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish a Release on main pushes or tag pushes, not on PRs
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifact dirs
+        run: |
+          mkdir -p dmgs
+          find artifacts -type f -name "*.dmg" -exec mv {} dmgs/ \;
+          ls -lh dmgs/
+
+      - name: Determine release metadata
+        id: meta
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${{ github.ref_name }}"        >> "$GITHUB_OUTPUT"
+            echo "name=${{ github.ref_name }}"       >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"                  >> "$GITHUB_OUTPUT"
+            echo "generate_notes=true"               >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest"                        >> "$GITHUB_OUTPUT"
+            echo "name=Latest build (main)"          >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"                   >> "$GITHUB_OUTPUT"
+            echo "generate_notes=false"              >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Release (${{ steps.meta.outputs.tag }})
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:     ${{ steps.meta.outputs.tag }}
+          name:         ${{ steps.meta.outputs.name }}
+          prerelease:   ${{ steps.meta.outputs.prerelease }}
+          generate_release_notes: ${{ steps.meta.outputs.generate_notes }}
+          body: |
+            Prebuilt DMGs, native for each macOS architecture.
+
+            - **Apple Silicon (M1/M2/M3/M4)** → `Browser-History-Gateway-arm64.dmg`
+            - **Intel** → `Browser-History-Gateway-intel.dmg`
+
+            Install: open the DMG → drag into **Applications** →
+            open System Settings → Privacy & Security → scroll to the
+            bottom → click **Open Anyway** for "Browser History Gateway"
+            on first launch (unsigned app, macOS Gatekeeper).
+          files: dmgs/*.dmg

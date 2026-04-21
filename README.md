@@ -14,9 +14,11 @@
 </p>
 
 <p align="center">
-  <a href="releases/Browser-History-Gateway-1.0.0.dmg">
-    <strong>⬇ Download the latest DMG (17 MB)</strong>
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest">
+    <strong>⬇ Download the latest DMG</strong>
   </a>
+  <br/>
+  <sub>(pick <code>arm64</code> for Apple Silicon M1/M2/M3/M4, or <code>intel</code> for older Intel Macs)</sub>
 </p>
 
 ---
@@ -38,9 +40,11 @@ Supports: **Chrome** (all profiles, with your custom profile names),
 
 ## Install (the easy way)
 
-1. Download the latest DMG from
-   [`releases/Browser-History-Gateway-1.0.0.dmg`](releases/Browser-History-Gateway-1.0.0.dmg)
-   — or use the direct GitHub URL on the Releases page.
+1. Open the
+   [**Releases page**](https://github.com/AntifragileTech/browser-history-gateway/releases/latest)
+   and download the DMG matching your Mac:
+   - `Browser-History-Gateway-arm64.dmg` — Apple Silicon (M1/M2/M3/M4)
+   - `Browser-History-Gateway-intel.dmg` — Intel Macs
 2. Open the DMG, drag **Browser History Gateway** into **Applications**.
 3. **Right-click** the app in Applications → **Open** (first time only; this
    is required for unsigned apps). Click **Open** in the Gatekeeper dialog.
