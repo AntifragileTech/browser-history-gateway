@@ -39,6 +39,15 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def _db() -> sqlite3.Connection:
+    # If the DB file does not yet exist (very first launch, before the
+    # collector has had a chance to run), create it with the full schema
+    # so every endpoint gets an empty-but-valid DB to read from. Beats
+    # raising 500 at the user on the very first page load.
+    if not DB_PATH.exists():
+        try:
+            collector_run.init_db()
+        except Exception:
+            pass
     conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
@@ -167,6 +176,8 @@ def index(
         where_clause = ("WHERE " + " AND ".join(where)) if where else ""
         count_sql = f"SELECT COUNT(*) FROM visits v JOIN browsers b ON b.id = v.browser_id {where_clause}"
         total = db.execute(count_sql, params).fetchone()[0]
+        # Absolute DB emptiness (no rows at all) → first-launch welcome card.
+        total_in_db = db.execute("SELECT COUNT(*) FROM visits").fetchone()[0]
 
         total_pages = max(1, math.ceil(total / page_size)) if total else 1
         # Clamp page so we never offset past the end.
@@ -238,6 +249,7 @@ def index(
             "profiles": [{"value": r["profile"], "label": r["label"]} for r in profiles],
             "month_presets": _month_presets(today),
             "default_applied": default_applied,
+            "total_in_db": total_in_db,
             "q": q, "browser": browser, "profile": profile, "domain": domain,
             "date_from": date_from, "date_to": date_to, "scope": scope,
         },

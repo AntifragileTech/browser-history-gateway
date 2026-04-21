@@ -31,14 +31,84 @@ TRANSITION_TYPES = {
     8: "reload", 9: "keyword", 10: "keyword_generated",
 }
 
-# Browser name -> root directory containing profile subdirs.
-# Arc nests profiles under "User Data"; others are flat.
-BROWSER_ROOTS = {
-    "chrome": "~/Library/Application Support/Google/Chrome",
-    "brave":  "~/Library/Application Support/BraveSoftware/Brave-Browser",
-    "edge":   "~/Library/Application Support/Microsoft Edge",
-    "arc":    "~/Library/Application Support/Arc/User Data",
-}
+# Known browser directories. These are the canonical paths where each
+# Chromium-family browser stores its `Local State` + per-profile folders
+# on macOS. We keep this list as a friendly-name hint — but the real
+# discovery is dynamic (see _discover_browsers below), so adding a new
+# Chromium fork on the user's Mac "just works" without code changes.
+_KNOWN_BROWSERS: list[tuple[str, str]] = [
+    # (friendly name, relative path from ~/Library/Application Support)
+    ("chrome",          "Google/Chrome"),
+    ("chrome-beta",     "Google/Chrome Beta"),
+    ("chrome-canary",   "Google/Chrome Canary"),
+    ("chrome-dev",      "Google/Chrome Dev"),
+    ("brave",           "BraveSoftware/Brave-Browser"),
+    ("brave-beta",      "BraveSoftware/Brave-Browser-Beta"),
+    ("brave-nightly",   "BraveSoftware/Brave-Browser-Nightly"),
+    ("edge",            "Microsoft Edge"),
+    ("edge-beta",       "Microsoft Edge Beta"),
+    ("edge-dev",        "Microsoft Edge Dev"),
+    ("arc",             "Arc/User Data"),
+    ("vivaldi",         "Vivaldi"),
+    ("opera",           "com.operasoftware.Opera"),
+    ("opera-gx",        "com.operasoftware.OperaGX"),
+    ("whale",           "Naver/Whale"),
+    ("chromium",        "Chromium"),
+    ("sidekick",        "Sidekick"),
+    ("yandex",          "Yandex/YandexBrowser"),
+]
+
+APPSUPPORT = Path("~/Library/Application Support").expanduser()
+
+
+def _discover_browsers() -> list[tuple[str, Path]]:
+    """Return [(friendly_name, root_path), ...] for every Chromium-family
+    browser actually installed on this Mac.
+
+    Detection rule: a directory is a Chromium profile root if it directly
+    contains a `Local State` file. We try the curated `_KNOWN_BROWSERS`
+    list first so the friendly names stay stable, then fall back to a
+    recursive scan so anything new (a Chromium fork the user just
+    installed) is picked up automatically.
+    """
+    seen: set[Path] = set()
+    out: list[tuple[str, Path]] = []
+    # 1. Fast path: curated list.
+    for name, rel in _KNOWN_BROWSERS:
+        root = APPSUPPORT / rel
+        if (root / "Local State").is_file():
+            out.append((name, root))
+            seen.add(root.resolve())
+    # 2. Fallback: scan ~/Library/Application Support two levels deep for
+    #    any "Local State" file we haven't already catalogued. Keeps us
+    #    forward-compatible with future Chromium forks.
+    try:
+        for child in APPSUPPORT.iterdir():
+            if not child.is_dir():
+                continue
+            for candidate in (child, *_safe_iterdir(child)):
+                if not candidate.is_dir():
+                    continue
+                if not (candidate / "Local State").is_file():
+                    continue
+                resolved = candidate.resolve()
+                if resolved in seen:
+                    continue
+                # Derive a friendly slug from the dir name(s).
+                rel_parts = candidate.relative_to(APPSUPPORT).parts
+                slug = "/".join(rel_parts).lower().replace(" ", "-")
+                out.append((slug, candidate))
+                seen.add(resolved)
+    except OSError:
+        pass
+    return out
+
+
+def _safe_iterdir(p: Path) -> list[Path]:
+    try:
+        return list(p.iterdir())
+    except OSError:
+        return []
 
 
 def chrome_time_to_unix(chrome_us: int) -> int:
@@ -141,8 +211,7 @@ def collect(central_db: sqlite3.Connection, tmp_dir: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     now = int(time.time())
 
-    for browser, root_str in BROWSER_ROOTS.items():
-        root = Path(root_str).expanduser()
+    for browser, root in _discover_browsers():
         profiles = _discover_profiles(browser, root)
         if not profiles:
             continue

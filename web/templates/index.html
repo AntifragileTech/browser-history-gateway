@@ -240,7 +240,22 @@
     </tr>
     {% endfor %}
     {% if not results %}
-    <tr><td colspan="6" style="text-align:center; padding:40px; color: var(--muted);">No visits match these filters.</td></tr>
+    <tr><td colspan="6" style="text-align:center; padding:40px; color: var(--muted);">
+      {% if total_in_db == 0 %}
+      <div style="max-width: 540px; margin: 0 auto; text-align: left; line-height: 1.6;">
+        <h2 style="color: var(--fg); margin: 0 0 8px;">Welcome 👋</h2>
+        <p>Your Mac is being scanned for installed browsers and profiles.
+           The first collection typically takes 10&ndash;30 seconds — this page
+           will auto-refresh once data lands.</p>
+        <p style="color: var(--muted); font-size: 12px;">
+           Nothing to collect yet? Make sure you've granted
+           <strong>Full Disk Access</strong> (menu bar ⏱ → Check Permissions)
+           and clicked <strong>Sync now</strong> above.</p>
+      </div>
+      {% else %}
+      No visits match these filters.
+      {% endif %}
+    </td></tr>
     {% endif %}
   </tbody>
 </table>

@@ -156,6 +156,13 @@ class BrowserHistoryApp(rumps.App):
 
     # ----- background work -----
     def _start_threads(self) -> None:
+        # Initialize the DB BEFORE the web server starts — otherwise a
+        # first-launch user hitting the UI sees a 500 because the read-only
+        # SQLite connection has no file to open yet.
+        try:
+            collector_run.init_db()
+        except Exception:
+            log.exception("failed to init DB at startup; UI may 500 until first sync")
         threading.Thread(target=self._serve_web, daemon=True).start()
         threading.Thread(target=self._collect_loop, daemon=True).start()
         threading.Thread(target=self._start_fsevents_watcher, daemon=True).start()

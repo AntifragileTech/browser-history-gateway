@@ -14,11 +14,22 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest">
-    <strong>⬇ Download the latest DMG</strong>
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-arm64.dmg">
+    <img src="https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-5b8def?logo=apple&logoColor=white&style=for-the-badge" alt="Download for Apple Silicon" />
   </a>
-  <br/>
-  <sub>(pick <code>arm64</code> for Apple Silicon M1/M2/M3/M4, or <code>intel</code> for older Intel Macs)</sub>
+  &nbsp;
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-intel.dmg">
+    <img src="https://img.shields.io/badge/Download-macOS%20Intel-444?logo=apple&logoColor=white&style=for-the-badge" alt="Download for Intel Mac" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest">
+    <img src="https://img.shields.io/badge/Windows-coming%20soon-888?logo=windows&logoColor=white&style=for-the-badge" alt="Windows coming soon" />
+  </a>
+</p>
+
+<p align="center">
+  <sub>Don't know which Mac you have? <strong>Apple menu → About This Mac → Chip</strong>.
+  Apple M1 / M2 / M3 / M4 = Apple Silicon. Anything with "Intel" = Intel.</sub>
 </p>
 
 ---
@@ -40,11 +51,12 @@ Supports: **Chrome** (all profiles, with your custom profile names),
 
 ## Install (the easy way)
 
-1. Open the
-   [**Releases page**](https://github.com/AntifragileTech/browser-history-gateway/releases/latest)
-   and download the DMG matching your Mac:
-   - `Browser-History-Gateway-arm64.dmg` — Apple Silicon (M1/M2/M3/M4)
-   - `Browser-History-Gateway-intel.dmg` — Intel Macs
+1. Click the button above for your Mac's architecture, or grab the DMG
+   directly:
+   - **Apple Silicon** (M1/M2/M3/M4) →
+     [Browser-History-Gateway-arm64.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-arm64.dmg)
+   - **Intel Mac** →
+     [Browser-History-Gateway-intel.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-intel.dmg)
 2. Open the DMG, drag **Browser History Gateway** into **Applications**.
 3. **Right-click** the app in Applications → **Open** (first time only; this
    is required for unsigned apps). Click **Open** in the Gatekeeper dialog.
@@ -136,6 +148,27 @@ build_app.sh              # .app + DMG build (with ad-hoc codesigning)
 update_app.sh             # rebuild + replace /Applications + relaunch
 releases/                 # prebuilt DMG committed for direct download
 ```
+
+## Windows — status: planned
+
+A Windows build (`.exe` installer) is planned and tracked separately
+because the entire menu-bar + in-app window layer of the current code
+is macOS-only (`rumps`, `WKWebView`, `FSEvents`). To ship on Windows
+honestly we'd need to swap in:
+
+- `pystray` for the system-tray icon (instead of `rumps`)
+- `pywebview` / Edge WebView2 for the in-app window (instead of `WKWebView`)
+- `watchdog`'s `ReadDirectoryChangesW` backend (already bundled, no change)
+- Windows browser paths: `%LOCALAPPDATA%\Google\Chrome\User Data\…`,
+  `%LOCALAPPDATA%\Microsoft\Edge\User Data\…`,
+  `%APPDATA%\Mozilla\Firefox\Profiles\…`, etc.
+- Build with **PyInstaller** (one-file `.exe`) on a `windows-latest`
+  GitHub Actions runner.
+
+The collector core (SQLite, URL parsing, reset-detection) already
+works cross-platform. The feature gap is the UI wrapper, which needs
+roughly half a day of focused work. Ping on an issue once the Mac
+flow is stable and the Windows build will follow.
 
 ## Uninstall
 
