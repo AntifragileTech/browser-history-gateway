@@ -2,6 +2,7 @@
 <!-- Updated: 20:32 21-Apr-2026 -->
 <!-- Updated: 23:54 21-Apr-2026 -->
 <!-- Updated: 23:58 21-Apr-2026 -->
+<!-- Updated: 21:55 27-Apr-2026 -->
 <p align="center">
   <img src="assets/logo.png" alt="Browser History Gateway logo" width="160" />
 </p>
@@ -9,8 +10,9 @@
 <h1 align="center">Browser History Gateway</h1>
 
 <p align="center">
-  <em>Your private, local archive of every page you've ever visited —
-  across every browser and profile on your Mac.</em>
+  <em>An open-source, local-only archive of every page you've ever visited —
+  across every browser and profile, on Mac and Windows.<br>
+  The code is public. The data never leaves your machine.</em>
 </p>
 
 <p align="center">
@@ -22,8 +24,8 @@
     <img src="https://img.shields.io/badge/Download-macOS%20Intel-444?logo=apple&logoColor=white&style=for-the-badge" alt="Download for Intel Mac" />
   </a>
   &nbsp;
-  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest">
-    <img src="https://img.shields.io/badge/Windows-coming%20soon-888?logo=windows&logoColor=white&style=for-the-badge" alt="Windows coming soon" />
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-windows.exe">
+    <img src="https://img.shields.io/badge/Download-Windows%2010%2F11-0078D4?logo=windows&logoColor=white&style=for-the-badge" alt="Download for Windows" />
   </a>
 </p>
 
@@ -34,53 +36,81 @@
 
 ---
 
-A local macOS menu-bar app that aggregates browsing history from every
-installed browser and profile into a single searchable SQLite database —
-then lets you search across date, time, browser, profile, URL, and title
-from a native in-app window.
+A local desktop app that aggregates browsing history from every installed
+browser and profile into a single searchable SQLite database — then lets
+you search across date, time, browser, profile, URL, and title from a
+native in-app window.
 
 - **Archive forever.** Chrome auto-expires history at 90 days. We don't.
 - **Never misses anything.** Runs every 45–60 seconds *and* on file-change
-  via FSEvents, so visits are captured within seconds of you making them.
-- **Private.** Everything stays on your Mac. No cloud, no telemetry.
+  via FSEvents (macOS) / ReadDirectoryChangesW (Windows), so visits are
+  captured within seconds.
+- **Local-only.** Everything stays on your machine. No cloud, no telemetry.
 
 Supports: **Chrome** (all profiles, with your custom profile names),
-**Brave**, **Arc**, **Edge**, **Safari**, **Firefox**.
+**Brave**, **Arc**, **Edge**, **Vivaldi**, **Opera**, **Safari** (macOS only),
+**Firefox**, plus auto-discovery of any other Chromium fork.
 
 ---
 
-## Install (the easy way)
+## Install — macOS
 
-1. Click the button above for your Mac's architecture, or grab the DMG
-   directly:
+1. Click the button above for your Mac's chip, or grab the DMG directly:
    - **Apple Silicon** (M1/M2/M3/M4) →
      [Browser-History-Gateway-arm64.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-arm64.dmg)
    - **Intel Mac** →
      [Browser-History-Gateway-intel.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-intel.dmg)
 2. Open the DMG, drag **Browser History Gateway** into **Applications**.
-3. **Right-click** the app in Applications → **Open** (first time only; this
-   is required for unsigned apps). Click **Open** in the Gatekeeper dialog.
-4. The ⏱ icon appears in your menu bar.
-5. Click ⏱ → **Check Permissions** — the app opens the Full Disk Access
-   pane in System Settings. Toggle "Browser History Gateway" on.
-6. Click ⏱ → **Quit** in the menu bar, then double-click the app to
-   relaunch. FDA is now active.
-7. Click ⏱ → **Open Search**. Your full browsing history appears in a
-   native in-app window.
+3. Double-click the app from Applications. macOS will block it on first
+   launch ("can't be opened because Apple cannot check it for malicious
+   software" — the app is unsigned because we don't have a paid Apple
+   Developer account). To allow it:
 
-That's it. No terminal required. The app auto-discovers every browser
-and profile, starts collecting, and keeps doing so forever.
+   **System Settings → Privacy & Security → scroll to the bottom →
+   click "Open Anyway" next to "Browser History Gateway"**.
+
+   Then double-click the app again. You only need to do this once per Mac.
+4. The menu-bar icon appears at the top of the screen.
+5. The **Welcome window** opens automatically on first launch. It walks
+   you through:
+   - Granting **Full Disk Access** (required only for Safari history —
+     Chrome/Brave/Arc/Edge/Firefox work without it).
+   - Listing every browser + profile detected on your Mac.
+   - Running the first collection so you immediately have data to search.
+6. After the welcome window, click the menu-bar icon → **Open Search**
+   to bring up the in-app search window any time.
+
+## Install — Windows
+
+1. Click the **Windows** button above, or grab the EXE directly:
+   [Browser-History-Gateway-windows.exe](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-windows.exe)
+2. Double-click the EXE. Windows SmartScreen will warn:
+   "Windows protected your PC … publisher: Unknown". (We don't have a
+   paid code-signing certificate.)
+   Click **More info → Run anyway**.
+3. The system-tray icon appears (look in the hidden-icon ▴ tray on the
+   right side of the taskbar — drag it onto the visible tray for easy
+   access).
+4. The **Welcome window** opens automatically on first launch and lists
+   every browser + profile detected, then runs the first collection.
+5. Right-click the tray icon → **Open Search** any time afterwards.
+
+> **Windows requirements**: Windows 10 21H2+ or Windows 11. Edge WebView2
+> runtime is preinstalled on all supported versions; if it's missing you
+> can install it from
+> [Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
 
 ## What you get
 
-- **Menu-bar app** (⏱) with *Open Search*, *Run Collection Now*,
-  *Check Permissions*, *Open Data Folder*, *Launch at Login…*, *Quit*.
+- **Menu-bar / tray app** with *Open Search*, *Run Collection Now*,
+  *Open Data Folder*, *Quit*. macOS also has *Check Permissions* and
+  *Launch at Login*.
 - **Native in-app search window** — no external browser required.
   Filters by keyword (with hit highlighting), browser, profile, domain,
-  and date. Quick-range presets: Today / Yesterday / This week / Last 7 /
-  This month / Last 30 / last 3 full months / All time / custom.
+  and date. Quick-range presets: Today / Yesterday / This week /
+  Last 7 / This month / Last 30 / last 3 full months / All time / custom.
 - **Sync status bar** showing last-synced time, countdown to next sync,
-  and Sync Now + Refresh buttons.
+  Sync Now + Refresh buttons.
 - **Serial-numbered rows**, descending from the most recent visit,
   continuing across pages.
 - **Auto-reload** after every sync — new rows appear without you clicking
@@ -91,7 +121,8 @@ and profile, starts collecting, and keeps doing so forever.
 - URL, page title, visit timestamp, browser, profile (with your friendly
   name, e.g. "Work" / "Personal"), and Chrome/Firefox transition type
   (link / typed / reload / …).
-- Data location: `~/.browser-history/history.db` (SQLite, WAL-mode).
+- Data location: `~/.browser-history/history.db` (SQLite, WAL-mode) —
+  same path on macOS, Windows, and Linux.
 - Logs: `~/.browser-history/collector.log` and `app.log`.
 - Config: `~/.browser-history/config.json` (optional — see below).
 
@@ -111,73 +142,95 @@ Optional. Create `~/.browser-history/config.json`:
 ```
 
 The collector picks a random interval between `min` and `max` each pass
-(default 45–60 s). File-change events via FSEvents trigger an additional
-collection within ~5 s of any browser write.
+(default 45–60 s). File-change events (FSEvents on macOS,
+ReadDirectoryChangesW on Windows) trigger an additional collection
+within ~5 s of any browser write.
 
-## Developer setup (only if you want to build from source)
+## Developer setup
 
-Skip this section if you're using the prebuilt DMG.
+### Run from source — macOS / Linux
 
 ```bash
-git clone https://github.com/<YOU>/browser-history-gateway.git
+git clone https://github.com/AntifragileTech/browser-history-gateway.git
 cd browser-history-gateway
 
 ./install.sh              # venv + deps + DB + one collection pass
 ./install.sh --agent      # also installs a launchd agent (no .app needed)
 
-# OR build the menu-bar .app + DMG yourself:
-./build_app.sh --dmg
+# Build the menu-bar .app + DMG yourself:
+./build_app.sh --dmg                    # arm64 (default)
+BHG_ARCH=x86_64 ./build_app.sh --dmg    # Intel slice from a universal2 toolchain
 
 # Update-in-place workflow:
 ./update_app.sh           # rebuild + replace /Applications/... + relaunch
 ```
 
+### Run from source — Windows
+
+```powershell
+git clone https://github.com/AntifragileTech/browser-history-gateway.git
+cd browser-history-gateway
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -r requirements-windows.txt
+
+# Run directly (tray icon will appear):
+python -m app
+
+# Or build a single-file EXE:
+.\build_windows.ps1
+```
+
+### Tests
+
+```bash
+pip install pytest pytest-cov
+pytest                                    # 79 tests, ~1 second
+pytest --cov=collector --cov=web          # with coverage report
+```
+
 ### Project layout
 
 ```
-app/menubar.py            # rumps menu-bar + WKWebView in-app window
+app/menubar_mac.py        # rumps menu-bar + WKWebView in-app window (macOS)
+app/menubar_win.py        # pystray tray + pywebview in-app window (Windows)
+app/__main__.py           # platform dispatcher entry point
+collector/paths.py        # cross-platform browser path resolution
 collector/                # per-browser collectors (chromium, safari, firefox)
 collector/state.py        # shared ingest-state + reset-detection helpers
 collector/run.py          # orchestrator, jittered loop, sync_state writer
-web/app.py                # FastAPI search UI + /api/sync-* endpoints
-web/templates/index.html  # single-page UI with sticky header and countdown
-launchd/…plist.template   # agent template substituted by install.sh
+web/app.py                # FastAPI search UI + /api/* endpoints
+web/templates/index.html  # search + filter UI
+web/templates/welcome.html# first-run onboarding flow
+launchd/…plist.template   # macOS launchd agent template
 schema.sql                # central DB schema + migrations
-setup_app.py              # py2app config for building the .app
-build_app.sh              # .app + DMG build (with ad-hoc codesigning)
-update_app.sh             # rebuild + replace /Applications + relaunch
-releases/                 # prebuilt DMG committed for direct download
+setup_app.py              # py2app config (macOS .app)
+build_app.sh              # macOS .app + DMG build
+build_windows.ps1         # Windows .exe build via PyInstaller
+update_app.sh             # rebuild + replace /Applications/... + relaunch
+tests/                    # pytest suite (run on every CI push)
 ```
-
-## Windows — status: planned
-
-A Windows build (`.exe` installer) is planned and tracked separately
-because the entire menu-bar + in-app window layer of the current code
-is macOS-only (`rumps`, `WKWebView`, `FSEvents`). To ship on Windows
-honestly we'd need to swap in:
-
-- `pystray` for the system-tray icon (instead of `rumps`)
-- `pywebview` / Edge WebView2 for the in-app window (instead of `WKWebView`)
-- `watchdog`'s `ReadDirectoryChangesW` backend (already bundled, no change)
-- Windows browser paths: `%LOCALAPPDATA%\Google\Chrome\User Data\…`,
-  `%LOCALAPPDATA%\Microsoft\Edge\User Data\…`,
-  `%APPDATA%\Mozilla\Firefox\Profiles\…`, etc.
-- Build with **PyInstaller** (one-file `.exe`) on a `windows-latest`
-  GitHub Actions runner.
-
-The collector core (SQLite, URL parsing, reset-detection) already
-works cross-platform. The feature gap is the UI wrapper, which needs
-roughly half a day of focused work. Ping on an issue once the Mac
-flow is stable and the Windows build will follow.
 
 ## Uninstall
 
-1. Quit the menu-bar app (⏱ → Quit).
+### macOS
+1. Quit the menu-bar app (icon → Quit).
 2. Drag **Browser History Gateway** from Applications to the Trash.
 3. (Optional) Delete `~/.browser-history/` to remove the collected
    history DB and logs.
 
+### Windows
+1. Right-click the tray icon → Quit.
+2. Delete `Browser-History-Gateway.exe`.
+3. (Optional) Delete `%USERPROFILE%\.browser-history\` to remove the
+   collected history DB and logs.
+
 ## License
 
-Personal use. No warranty — this is a local-only archival tool; keep
-your Mac's disk encrypted so the collected DB stays private.
+**Personal use, no warranty.** Use this on your own machine. The author
+makes no guarantees of correctness, suitability, or fitness for any
+purpose. Your data stays on your computer; if it leaks because your disk
+isn't encrypted, that's on you. Keep FileVault (macOS) / BitLocker
+(Windows) on.

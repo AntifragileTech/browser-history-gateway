@@ -1,8 +1,18 @@
 # Created: 00:30 22-Apr-2026
-# Build native DMGs for Intel (macos-13) and Apple Silicon (macos-14).
-# Every push to main -> refreshes the "latest" pre-release with both DMGs.
-# Every git tag v*   -> creates a stable Release with both DMGs + notes.
-name: Build macOS DMGs
+# Updated: 21:55 27-Apr-2026
+# Build artifacts for every supported platform on every push to main:
+#   - macOS Apple Silicon (arm64)  -> Browser-History-Gateway-arm64.dmg
+#   - macOS Intel        (x86_64)  -> Browser-History-Gateway-intel.dmg
+#   - Windows 10/11      (x64)     -> Browser-History-Gateway-windows.exe
+#
+# Both Mac binaries are produced on the same macos-14 (arm64) runner.
+# py2app reads the BHG_ARCH env var and slices the universal2 pyobjc /
+# Python binaries to a single architecture, so we get two independent
+# native bundles from one runner — no defunct macos-13 dependency.
+#
+# A separate ubuntu-latest job runs the pytest unit suite. The release
+# job waits for tests + all three platform builds before publishing.
+name: Build
 
 on:
   push:
@@ -14,57 +24,110 @@ permissions:
   contents: write  # needed to publish GitHub Releases
 
 jobs:
-  build:
+  test:
+    name: Unit tests (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install runtime + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      - name: Run pytest
+        run: pytest -v --cov=collector --cov=web --cov-report=term-missing
+
+  build-macos:
+    name: macOS DMG (${{ matrix.arch }})
+    needs: test
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-13   # Intel x86_64 runner
-            arch: intel
-          - os: macos-14   # Apple Silicon arm64 runner
-            arch: arm64
-    runs-on: ${{ matrix.os }}
+        arch: [arm64, x86_64]
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+      BHG_ARCH: ${{ matrix.arch }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-
-      - name: Build .app + DMG (native ${{ matrix.arch }})
+      - name: Build .app + DMG (${{ matrix.arch }})
         run: |
           chmod +x build_app.sh
           ./build_app.sh --dmg --clean
-
-      - name: Rename DMG with architecture suffix
+      - name: Verify produced binary architecture
         run: |
+          BIN="dist/Browser History Gateway.app/Contents/MacOS/BrowserHistory"
+          file "$BIN"
+          file "$BIN" | grep -q "${{ matrix.arch }}" || \
+            (echo "ERROR: built binary is not ${{ matrix.arch }}"; exit 1)
+      - name: Rename DMG with friendly suffix
+        run: |
+          # arm64 -> arm64.dmg, x86_64 -> intel.dmg (matches README badges)
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then SUFFIX="intel"; else SUFFIX="arm64"; fi
           mv "dist/Browser History Gateway.dmg" \
-             "dist/Browser-History-Gateway-${{ matrix.arch }}.dmg"
-
+             "dist/Browser-History-Gateway-${SUFFIX}.dmg"
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dmg-${{ matrix.arch }}
-          path: dist/Browser-History-Gateway-${{ matrix.arch }}.dmg
+          path: dist/Browser-History-Gateway-*.dmg
+          retention-days: 30
+
+  build-windows:
+    name: Windows EXE
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-windows.txt
+      - name: Build single-file EXE with PyInstaller
+        shell: pwsh
+        run: |
+          .\build_windows.ps1
+      - name: Verify EXE exists
+        shell: pwsh
+        run: |
+          if (-Not (Test-Path "dist/Browser-History-Gateway.exe")) {
+            Write-Error "EXE not produced"
+            exit 1
+          }
+          Get-Item "dist/Browser-History-Gateway.exe" | Format-List
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: exe-windows
+          path: dist/Browser-History-Gateway.exe
           retention-days: 30
 
   release:
-    needs: build
+    name: Publish Release
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
-    # Only publish a Release on main pushes or tag pushes, not on PRs
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
-
       - name: Flatten artifact dirs
         run: |
-          mkdir -p dmgs
-          find artifacts -type f -name "*.dmg" -exec mv {} dmgs/ \;
-          ls -lh dmgs/
-
+          mkdir -p assets
+          find artifacts -type f \( -name "*.dmg" -o -name "*.exe" \) \
+            -exec mv {} assets/ \;
+          ls -lh assets/
       - name: Determine release metadata
         id: meta
         run: |
@@ -79,7 +142,6 @@ jobs:
             echo "prerelease=true"                   >> "$GITHUB_OUTPUT"
             echo "generate_notes=false"              >> "$GITHUB_OUTPUT"
           fi
-
       - name: Publish Release (${{ steps.meta.outputs.tag }})
         uses: softprops/action-gh-release@v2
         with:
@@ -88,13 +150,20 @@ jobs:
           prerelease:   ${{ steps.meta.outputs.prerelease }}
           generate_release_notes: ${{ steps.meta.outputs.generate_notes }}
           body: |
-            Prebuilt DMGs, native for each macOS architecture.
+            Prebuilt downloads for every supported platform.
 
-            - **Apple Silicon (M1/M2/M3/M4)** → `Browser-History-Gateway-arm64.dmg`
-            - **Intel** → `Browser-History-Gateway-intel.dmg`
+            - **macOS Apple Silicon (M1/M2/M3/M4)** -> `Browser-History-Gateway-arm64.dmg`
+            - **macOS Intel** -> `Browser-History-Gateway-intel.dmg`
+            - **Windows 10/11 (x64)** -> `Browser-History-Gateway-windows.exe`
 
-            Install: open the DMG → drag into **Applications** →
-            open System Settings → Privacy & Security → scroll to the
-            bottom → click **Open Anyway** for "Browser History Gateway"
-            on first launch (unsigned app, macOS Gatekeeper).
-          files: dmgs/*.dmg
+            ### Install — macOS
+            Open the DMG, drag **Browser History Gateway** into **Applications**.
+            On first launch macOS Gatekeeper will block the app:
+            **System Settings → Privacy & Security → scroll down → Open Anyway**.
+
+            ### Install — Windows
+            Double-click the .exe. Windows SmartScreen will warn you ("publisher
+            unknown" — the binary is unsigned). Click **More info → Run anyway**.
+
+            License: personal use, no warranty.
+          files: assets/*

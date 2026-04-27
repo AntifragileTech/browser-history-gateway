@@ -1,0 +1,12 @@
+# Created: 21:55 27-Apr-2026
+# Build-time deps for packaging the Windows .exe via PyInstaller.
+# Install into a venv: python -m venv .venv-build
+-r requirements.txt
+# System-tray icon (Windows Shell_NotifyIcon under the hood).
+pystray==0.19.5
+# In-app window using Edge WebView2 (preinstalled on Win10 21H2+ / Win11).
+pywebview==5.4
+# pystray needs Pillow for the icon image.
+Pillow==10.4.0
+# One-file Windows binary.
+pyinstaller==6.10.0

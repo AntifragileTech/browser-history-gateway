@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Created: 20:31 21-Apr-2026
+# Updated: 21:55 27-Apr-2026
 # One-command bootstrap for a fresh Mac.
 #
 # Usage:
@@ -28,7 +29,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-PLIST_LABEL="com.user.browserhistory"
+PLIST_LABEL="com.antifragiletech.browserhistory"
 PLIST_DST="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 PLIST_TEMPLATE="$SCRIPT_DIR/launchd/${PLIST_LABEL}.plist.template"
 

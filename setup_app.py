@@ -1,28 +1,40 @@
 # Created: 20:40 21-Apr-2026
 # Updated: 20:43 21-Apr-2026
+# Updated: 21:55 27-Apr-2026
 """py2app build configuration for Browser History Gateway.
 
 Build with:    ./build_app.sh
 Manual build:  python3 setup_app.py py2app
+
+The BHG_ARCH env var (default 'arm64') selects the target macOS arch.
+Both 'arm64' and 'x86_64' build natively from a macos-14 (arm64) runner
+because pyobjc + Python 3.11 ship as universal2 wheels — py2app slices
+the binaries via lipo to produce a single-arch .app.
 """
+import os
+
 from setuptools import setup
 
-APP = ["app/menubar.py"]
+APP = ["app/menubar_mac.py"]
+ARCH = os.environ.get("BHG_ARCH", "arm64")
 
 OPTIONS = {
     "argv_emulation": False,
+    "arch": ARCH,
     "plist": {
         "CFBundleName": "Browser History Gateway",
         "CFBundleDisplayName": "Browser History Gateway",
-        "CFBundleIdentifier": "com.user.browserhistorygateway",
+        "CFBundleIdentifier": "com.antifragiletech.browserhistorygateway",
         "CFBundleVersion": "1.0.0",
         "CFBundleShortVersionString": "1.0.0",
         "NSHighResolutionCapable": True,
         # Menu-bar only — no Dock icon, no Cmd-Tab entry.
         "LSUIElement": True,
-        # Allow launch at login via System Settings → Login Items.
+        # Allow launch at login via System Settings -> Login Items.
         "LSMultipleInstancesProhibited": True,
-        "NSHumanReadableCopyright": "© 2026 Browser History Gateway",
+        "NSHumanReadableCopyright": "(c) 2026 Browser History Gateway",
+        # Minimum supported macOS — see .github/workflows/build.yml env.
+        "LSMinimumSystemVersion": "12.0",
     },
     # `packages` copies a package's entire source tree (good for things
     # that do dynamic imports). `includes` just pulls in a module by name.
@@ -70,6 +82,10 @@ OPTIONS = {
         "tkinter",
         "test",
         "unittest",
+        # pystray + pywebview are only used on Windows; exclude from .app
+        # so py2app doesn't try to bundle their Win32-specific deps.
+        "pystray",
+        "webview",
     ],
 }
 

@@ -1,6 +1,7 @@
 # Created: 20:40 21-Apr-2026
 # Updated: 20:58 21-Apr-2026
-# Build-time deps for packaging as a macOS .app.
+# Updated: 21:55 27-Apr-2026
+# Build-time deps for packaging the macOS .app via py2app.
 # Install into a separate venv: python3 -m venv .venv-build
 -r requirements.txt
 rumps==0.4.0

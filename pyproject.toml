@@ -1,0 +1,22 @@
+# Created: 21:55 27-Apr-2026
+# Minimal config — pytest discovery + ruff/black settings used by CI.
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "unit: Single-function unit tests with no I/O.",
+    "integration: Tests that touch the SQLite DB or filesystem.",
+]
+
+[tool.coverage.run]
+source = ["collector", "web"]
+branch = true
+omit = ["app/menubar_mac.py", "app/menubar_win.py", "app/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Created: 20:40 21-Apr-2026
+# Updated: 21:55 27-Apr-2026
 # Build the Browser History Gateway macOS .app (+ optional DMG).
 #
 # Usage:
 #   ./build_app.sh            # builds dist/Browser History Gateway.app
 #   ./build_app.sh --dmg      # also packages a drag-to-Applications DMG
 #   ./build_app.sh --clean    # wipe build/ and dist/ first
+#
+# Architecture is selected by the BHG_ARCH env var (default: arm64).
+# Set BHG_ARCH=x86_64 to build the Intel slice from a universal2 toolchain.
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -24,6 +28,7 @@ done
 APP_NAME="Browser History Gateway"
 APP_BUNDLE="dist/${APP_NAME}.app"
 DMG_PATH="dist/${APP_NAME}.dmg"
+ARCH="${BHG_ARCH:-arm64}"
 
 # ---- 1. Build venv ----
 if [[ ! -d .venv-build ]]; then
@@ -43,9 +48,9 @@ if [[ $DO_CLEAN -eq 1 ]]; then
 fi
 
 # ---- 3. Build .app ----
-echo "==> Running py2app (this takes 30–90 s)"
-python3 setup_app.py py2app >/tmp/py2app-build.log 2>&1 || {
-    echo "py2app failed. Last 40 log lines:"; tail -40 /tmp/py2app-build.log
+echo "==> Running py2app (target arch: ${ARCH})"
+BHG_ARCH="$ARCH" python3 setup_app.py py2app >/tmp/py2app-build.log 2>&1 || {
+    echo "py2app failed. Last 60 log lines:"; tail -60 /tmp/py2app-build.log
     exit 1
 }
 
@@ -65,7 +70,7 @@ echo "    $APP_BUNDLE  ($BUNDLE_SIZE)"
 # Gatekeeper "unidentified developer" prompt on first launch.
 echo "==> Ad-hoc code-signing bundle"
 codesign --force --deep --sign - \
-    --identifier com.user.browserhistorygateway \
+    --identifier com.antifragiletech.browserhistorygateway \
     "$APP_BUNDLE" >/dev/null 2>&1 || echo "    (codesign warning, continuing)"
 
 # ---- 4. DMG ----
@@ -86,7 +91,7 @@ fi
 cat <<EOF
 
 ================================================================
-  Build complete.
+  Build complete — arch: ${ARCH}
 
   App:   $APP_BUNDLE
 $([[ $DO_DMG -eq 1 ]] && echo "  DMG:   $DMG_PATH")
@@ -95,12 +100,14 @@ $([[ $DO_DMG -eq 1 ]] && echo "  DMG:   $DMG_PATH")
       open "$APP_BUNDLE"
 
   To distribute (UNSIGNED — first-launch note below):
-      1. Drag the .app (or .dmg) to the target Mac.
-      2. Right-click → Open, click Open in the Gatekeeper warning.
-         (Only needed once per Mac, because it's not code-signed.)
-      3. App will prompt for Full Disk Access — grant it, fully quit,
-         and relaunch. Collection starts automatically every 10 min.
+      1. Drag the .app (or .dmg) onto the target Mac.
+      2. macOS Gatekeeper will block it on first launch.
+         Open System Settings -> Privacy & Security ->
+         scroll down -> Open Anyway. (macOS 15+ no longer
+         honors the right-click -> Open bypass.)
+      3. App will prompt for Full Disk Access — grant it,
+         fully quit, and relaunch.
 
-  Icon shows in the top menu-bar. Click 🕸 for Open Search / Run Now.
+  Icon shows in the top menu bar.
 ================================================================
 EOF

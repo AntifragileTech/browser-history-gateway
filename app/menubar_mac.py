@@ -3,11 +3,12 @@
 # Updated: 20:48 21-Apr-2026
 # Updated: 20:56 21-Apr-2026
 # Updated: 20:59 21-Apr-2026
-"""Menu bar app wrapper for Browser History Gateway.
+# Updated: 21:55 27-Apr-2026
+"""macOS menu bar app wrapper for Browser History Gateway.
 
-Runs the collector every 10 minutes + an embedded FastAPI UI on
-127.0.0.1:8765, all from a single menu-bar icon. Handles first-run
-Full Disk Access check and guides the user to grant it.
+Runs the collector + an embedded FastAPI UI on a 127.0.0.1 port chosen
+at startup, all from a single menu-bar icon. Handles first-run Full Disk
+Access nag and routes the user through the in-app onboarding window.
 
 Launched by py2app as the entry point of BrowserHistoryGateway.app.
 """
@@ -19,6 +20,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import Optional
 
 import rumps
 
@@ -33,10 +35,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     handlers=[logging.FileHandler(LOG_DIR / "app.log")],
 )
-log = logging.getLogger("app.menubar")
+log = logging.getLogger("app.menubar_mac")
 
 WEB_HOST = "127.0.0.1"
-WEB_PORT = 8765
 
 # FSEvents: which directories contain browser history files we care about.
 # We watch recursively and filter event paths by filename (History*,
@@ -77,8 +78,8 @@ class BrowserHistoryApp(rumps.App):
     def __init__(self) -> None:
         # Use a PNG template image so the icon renders at the same size
         # as every other menu-bar icon and auto-inverts in dark mode.
-        # Falls back to the ⏱ emoji if the PNG isn't bundled.
-        icon_path: str | None = None
+        # Falls back to the (clock) emoji if the PNG isn't bundled.
+        icon_path: Optional[str] = None
         for candidate in (
             Path(__file__).resolve().parent.parent / "assets" / "menubar_template.png",
             # py2app ships everything in Contents/Resources/ at runtime.
@@ -89,7 +90,7 @@ class BrowserHistoryApp(rumps.App):
                 break
         super().__init__(
             name="BrowserHistory",
-            title=None if icon_path else "⏱",
+            title=None if icon_path else "BHG",
             icon=icon_path,
             template=True,   # treat icon as a template for dark-mode adaptation
             quit_button=None,
@@ -112,8 +113,11 @@ class BrowserHistoryApp(rumps.App):
         self._status_item = self.menu["Status: starting…"]
         self._last_collect_ts = 0.0
         self._last_collect_count = 0
-        self._pending_status: str | None = None
+        self._pending_status: Optional[str] = None
         self._running = True
+        # Pick a free port + start web server BEFORE anything else uses it.
+        self._port = web_app.pick_open_port()
+        web_app.write_port(self._port)
         self._start_threads()
         # First-run permission nag after a short delay so the menu bar
         # icon is visible before the modal pops.
@@ -125,34 +129,38 @@ class BrowserHistoryApp(rumps.App):
         self._status_pump.start()
 
     # ----- menu actions -----
-    def open_search(self, _):
+    def open_search(self, _) -> None:
         """Show the search UI inside a native WKWebView window — no
         external browser needed. If the WebKit framework isn't available
         for some reason (older macOS, missing PyObjC framework), fall
         back to opening the default browser.
         """
         try:
-            self._open_app_window()
+            self._open_app_window(path="/")
         except Exception:
             log.exception("in-app window failed; falling back to browser")
             self.open_search_browser(None)
 
-    def open_search_browser(self, _):
-        webbrowser.open(f"http://{WEB_HOST}:{WEB_PORT}/")
+    def open_search_browser(self, _) -> None:
+        webbrowser.open(self._url("/"))
 
-    def collect_now(self, _):
+    def collect_now(self, _) -> None:
         threading.Thread(target=self._collect_once, daemon=True).start()
         # No notification — status updates appear in the menu item itself.
 
-    def check_perms_menu(self, _):
+    def check_perms_menu(self, _) -> None:
         self._check_permissions(interactive=True)
 
-    def open_data_folder(self, _):
+    def open_data_folder(self, _) -> None:
         subprocess.run(["open", str(LOG_DIR)])
 
-    def quit_app(self, _):
+    def quit_app(self, _) -> None:
         self._running = False
         rumps.quit_application()
+
+    # ----- url helpers -----
+    def _url(self, path: str) -> str:
+        return f"http://{WEB_HOST}:{self._port}{path}"
 
     # ----- background work -----
     def _start_threads(self) -> None:
@@ -176,7 +184,7 @@ class BrowserHistoryApp(rumps.App):
             uvicorn.run(
                 web_app.app,
                 host=WEB_HOST,
-                port=WEB_PORT,
+                port=self._port,
                 log_level="warning",
                 loop="asyncio",
                 http="h11",
@@ -198,7 +206,7 @@ class BrowserHistoryApp(rumps.App):
             self._pending_status = f"Last run: {when} ({count} new)"
             # Intentionally no rumps.notification() here — the user can
             # glance at the menu bar if they want a status. Toast popups
-            # every 10 minutes are annoying for a background tool.
+            # every minute are annoying for a background tool.
         except Exception as e:
             log.exception("collection failed")
             self._pending_status = f"Status: error — {type(e).__name__}"
@@ -209,7 +217,27 @@ class BrowserHistoryApp(rumps.App):
         # the collector itself handles random-jittered 45-60 s intervals
         # and writes sync_state.json for the UI countdown to read.
         time.sleep(3)
+        # First-launch check: if DB is empty, open the welcome window
+        # automatically so the user sees discovered browsers + progress.
+        try:
+            if collector_run.DB_PATH.exists():
+                import sqlite3
+                with sqlite3.connect(f"file:{collector_run.DB_PATH}?mode=ro", uri=True) as c:
+                    n = c.execute("SELECT COUNT(*) FROM visits").fetchone()[0]
+                if n == 0:
+                    # Schedule the window open on the main thread.
+                    self._pending_status = "First-time setup…"
+                    rumps.Timer(self._open_welcome_main_thread, 0.5).start()
+        except Exception:
+            log.exception("welcome-on-first-launch check failed; continuing")
         collector_run.run_loop(stop_flag=lambda: not self._running)
+
+    def _open_welcome_main_thread(self, timer) -> None:
+        timer.stop()
+        try:
+            self._open_app_window(path="/welcome")
+        except Exception:
+            log.exception("could not auto-open /welcome")
 
     def _start_fsevents_watcher(self) -> None:
         """Watch browser profile dirs for changes to their History DBs
@@ -229,7 +257,7 @@ class BrowserHistoryApp(rumps.App):
         class _HistoryChangeHandler(FileSystemEventHandler):
             def __init__(self) -> None:
                 self._lock = threading.Lock()
-                self._timer: threading.Timer | None = None
+                self._timer: Optional[threading.Timer] = None
 
             def on_any_event(self, event) -> None:
                 name = Path(event.src_path).name
@@ -264,7 +292,7 @@ class BrowserHistoryApp(rumps.App):
         observer.start()
         self._observer = observer  # keep ref so it isn't GC'd
 
-    def _open_app_window(self) -> None:
+    def _open_app_window(self, path: str = "/") -> None:
         """Create (or re-show) a native NSWindow containing a WKWebView
         that points at the embedded FastAPI server. Must run on the main
         thread — rumps menu callbacks already are.
@@ -278,8 +306,11 @@ class BrowserHistoryApp(rumps.App):
         from Foundation import NSURL, NSURLRequest, NSMakeRect
         from WebKit import WKWebView, WKWebViewConfiguration
 
-        # If the window already exists, just bring it to front.
-        if self._main_window is not None:
+        # If the window already exists, navigate it to the requested path
+        # and bring to front instead of creating a duplicate.
+        if self._main_window is not None and self._main_webview is not None:
+            url = NSURL.URLWithString_(self._url(path))
+            self._main_webview.loadRequest_(NSURLRequest.requestWithURL_(url))
             self._main_window.makeKeyAndOrderFront_(None)
             NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
             return
@@ -307,7 +338,7 @@ class BrowserHistoryApp(rumps.App):
         webview.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         window.contentView().addSubview_(webview)
 
-        url = NSURL.URLWithString_(f"http://{WEB_HOST}:{WEB_PORT}/")
+        url = NSURL.URLWithString_(self._url(path))
         webview.loadRequest_(NSURLRequest.requestWithURL_(url))
 
         # Apps with LSUIElement=True start as "accessory" agents (no Dock
@@ -332,12 +363,12 @@ class BrowserHistoryApp(rumps.App):
             self._pending_status = None
 
     def launch_at_login(self, _) -> None:
-        """Point the user at the System Settings → Login Items pane."""
+        """Point the user at the System Settings -> Login Items pane."""
         rumps.alert(
             title="Launch at Login",
             message=(
                 "To start Browser History Gateway automatically at login:\n\n"
-                "1. System Settings → General → Login Items & Extensions\n"
+                "1. System Settings -> General -> Login Items & Extensions\n"
                 "2. Click '+' under 'Open at Login' and add this app.\n\n"
                 "(Click OK to open the pane now.)"
             ),
@@ -373,7 +404,7 @@ class BrowserHistoryApp(rumps.App):
                 "Browser History Gateway needs Full Disk Access to read "
                 "Safari's history database. Chrome/Brave/Arc/Edge work "
                 "without it.\n\n"
-                "Click “Open Settings”, then drag this app into the "
+                "Click \"Open Settings\", then drag this app into the "
                 "list (or toggle it on). After granting, fully quit and "
                 "reopen the app."
             ),

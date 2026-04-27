@@ -1,27 +1,29 @@
 # Created: 18:59 21-Apr-2026
 # Updated: 21:29 21-Apr-2026
 # Updated: 21:47 21-Apr-2026
-"""Collector for Chromium-family browsers: Chrome, Brave, Arc, Edge.
+# Updated: 21:55 27-Apr-2026
+"""Collector for Chromium-family browsers: Chrome, Brave, Arc, Edge, ...
 
-All use the same SQLite history schema. Timestamps are microseconds since
-1601-01-01 UTC (Windows epoch).
+All Chromium forks share the same SQLite history schema. Timestamps are
+microseconds since 1601-01-01 UTC (Windows epoch).
+
+Cross-platform: see collector/paths.py for per-OS profile-root paths.
 """
 from __future__ import annotations
 
 import json
 import logging
-import shutil
 import sqlite3
 import time
 from pathlib import Path
 from typing import Iterator, Optional
 from urllib.parse import urlparse
 
-from . import state
+from . import paths, state
 
 log = logging.getLogger(__name__)
 
-# Windows epoch (1601-01-01) to unix epoch (1970-01-01) in seconds.
+# Windows-NT epoch (1601-01-01) to unix epoch (1970-01-01) in seconds.
 WIN_EPOCH_OFFSET = 11644473600
 
 # Chromium PageTransition core types (low byte of transition int).
@@ -31,59 +33,36 @@ TRANSITION_TYPES = {
     8: "reload", 9: "keyword", 10: "keyword_generated",
 }
 
-# Known browser directories. These are the canonical paths where each
-# Chromium-family browser stores its `Local State` + per-profile folders
-# on macOS. We keep this list as a friendly-name hint — but the real
-# discovery is dynamic (see _discover_browsers below), so adding a new
-# Chromium fork on the user's Mac "just works" without code changes.
-_KNOWN_BROWSERS: list[tuple[str, str]] = [
-    # (friendly name, relative path from ~/Library/Application Support)
-    ("chrome",          "Google/Chrome"),
-    ("chrome-beta",     "Google/Chrome Beta"),
-    ("chrome-canary",   "Google/Chrome Canary"),
-    ("chrome-dev",      "Google/Chrome Dev"),
-    ("brave",           "BraveSoftware/Brave-Browser"),
-    ("brave-beta",      "BraveSoftware/Brave-Browser-Beta"),
-    ("brave-nightly",   "BraveSoftware/Brave-Browser-Nightly"),
-    ("edge",            "Microsoft Edge"),
-    ("edge-beta",       "Microsoft Edge Beta"),
-    ("edge-dev",        "Microsoft Edge Dev"),
-    ("arc",             "Arc/User Data"),
-    ("vivaldi",         "Vivaldi"),
-    ("opera",           "com.operasoftware.Opera"),
-    ("opera-gx",        "com.operasoftware.OperaGX"),
-    ("whale",           "Naver/Whale"),
-    ("chromium",        "Chromium"),
-    ("sidekick",        "Sidekick"),
-    ("yandex",          "Yandex/YandexBrowser"),
-]
-
-APPSUPPORT = Path("~/Library/Application Support").expanduser()
+# Insert at most this many rows per executemany. On a first-ever sync of a
+# 500K+ row Chrome history, an unbounded list would hold the entire batch
+# in memory before flushing — at ~500 B/object that's hundreds of MB. With
+# this cap the high-water mark stays predictable regardless of source size.
+INSERT_BATCH_SIZE = 5000
 
 
 def _discover_browsers() -> list[tuple[str, Path]]:
     """Return [(friendly_name, root_path), ...] for every Chromium-family
-    browser actually installed on this Mac.
+    browser actually installed on this machine.
 
     Detection rule: a directory is a Chromium profile root if it directly
-    contains a `Local State` file. We try the curated `_KNOWN_BROWSERS`
-    list first so the friendly names stay stable, then fall back to a
-    recursive scan so anything new (a Chromium fork the user just
-    installed) is picked up automatically.
+    contains a `Local State` file. We try the curated paths from
+    `paths.chromium_known_browsers()` first so the friendly names stay
+    stable, then fall back to a recursive scan so anything new (a Chromium
+    fork the user just installed) is picked up automatically.
     """
     seen: set[Path] = set()
     out: list[tuple[str, Path]] = []
     # 1. Fast path: curated list.
-    for name, rel in _KNOWN_BROWSERS:
-        root = APPSUPPORT / rel
+    for name, root in paths.chromium_known_browsers():
         if (root / "Local State").is_file():
             out.append((name, root))
             seen.add(root.resolve())
-    # 2. Fallback: scan ~/Library/Application Support two levels deep for
-    #    any "Local State" file we haven't already catalogued. Keeps us
-    #    forward-compatible with future Chromium forks.
+    # 2. Fallback: scan the OS's Chromium app-support root two levels deep
+    #    for any "Local State" file we haven't already catalogued. Keeps
+    #    us forward-compatible with future Chromium forks.
+    appsupport = paths.chromium_appsupport_root()
     try:
-        for child in APPSUPPORT.iterdir():
+        for child in appsupport.iterdir():
             if not child.is_dir():
                 continue
             for candidate in (child, *_safe_iterdir(child)):
@@ -95,7 +74,7 @@ def _discover_browsers() -> list[tuple[str, Path]]:
                 if resolved in seen:
                     continue
                 # Derive a friendly slug from the dir name(s).
-                rel_parts = candidate.relative_to(APPSUPPORT).parts
+                rel_parts = candidate.relative_to(appsupport).parts
                 slug = "/".join(rel_parts).lower().replace(" ", "-")
                 out.append((slug, candidate))
                 seen.add(resolved)
@@ -130,7 +109,7 @@ def _read_profile_display_names(root: Path) -> dict[str, str]:
 
     Returns a mapping {on_disk_folder_name: friendly_name}. Chromium stores
     things like {'Default': 'Work', 'Profile 1': 'Personal'} under
-    profile.info_cache.<folder>.name — populated when the user edits the
+    profile.info_cache.<folder>.name, populated when the user edits the
     profile name in chrome://settings/manageProfile.
     """
     state_path = root / "Local State"
@@ -166,11 +145,34 @@ def _discover_profiles(browser: str, root: Path) -> list[tuple[str, Path]]:
     return profiles
 
 
-def _copy_locked_db(src: Path, dst_dir: Path) -> Path:
-    """Chromium locks its History DB when the browser is open. Copy it first."""
+def _backup_locked_db(src: Path, dst_dir: Path, browser: str, profile: str) -> Path:
+    """Copy the (possibly-locked, possibly-WAL-mode) source History DB to a
+    self-contained snapshot using SQLite's online backup API.
+
+    `shutil.copy2` is unsafe here: Chrome may be writing to History at the
+    moment we copy, and bare bytes may not include the matching -wal/-shm
+    sidecars. The backup API produces a fully consistent snapshot
+    regardless of writer activity or journal mode.
+    """
     dst_dir.mkdir(parents=True, exist_ok=True)
-    dst = dst_dir / f"{src.parent.name}-History.sqlite"
-    shutil.copy2(src, dst)
+    safe_browser = browser.replace("/", "_")
+    safe_profile = profile.replace("/", "_")
+    dst = dst_dir / f"{safe_browser}-{safe_profile}-History.sqlite"
+    if dst.exists():
+        dst.unlink()
+    src_conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        dst_conn = sqlite3.connect(str(dst))
+        try:
+            src_conn.backup(dst_conn)
+            # Switch the copy to rollback-journal mode so older sqlite3
+            # builds (older bundled libsqlite) can read it without -wal.
+            dst_conn.execute("PRAGMA journal_mode=DELETE")
+            dst_conn.commit()
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
     return dst
 
 
@@ -206,20 +208,36 @@ def _read_visits(db_path: Path, since_source_id: int) -> Iterator[dict]:
         conn.close()
 
 
+def _flush(central_db: sqlite3.Connection, batch: list[tuple]) -> None:
+    """INSERT OR IGNORE the accumulated batch and commit. Caller clears
+    the list after this returns."""
+    if not batch:
+        return
+    central_db.executemany(
+        """
+        INSERT OR IGNORE INTO visits
+        (browser_id, url, domain, title, visited_at, transition,
+         source_visit_id, ingested_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        batch,
+    )
+
+
 def collect(central_db: sqlite3.Connection, tmp_dir: Path) -> dict[str, int]:
     """Ingest all Chromium-family browsers into central DB. Returns per-browser counts."""
     counts: dict[str, int] = {}
     now = int(time.time())
 
     for browser, root in _discover_browsers():
-        profiles = _discover_profiles(browser, root)
-        if not profiles:
+        profiles_for_browser = _discover_profiles(browser, root)
+        if not profiles_for_browser:
             continue
 
         # One Local State read per browser family, not per profile.
         display_names = _read_profile_display_names(root)
 
-        for profile_name, history_file in profiles:
+        for profile_name, history_file in profiles_for_browser:
             key = f"{browser}:{profile_name}"
             try:
                 browser_id = state.ensure_browser(central_db, browser, profile_name)
@@ -229,7 +247,7 @@ def collect(central_db: sqlite3.Connection, tmp_dir: Path) -> dict[str, int]:
                     central_db, browser_id, display_names.get(profile_name)
                 )
                 last_raw, offset = state.get_state(central_db, browser_id)
-                copied = _copy_locked_db(history_file, tmp_dir)
+                copied = _backup_locked_db(history_file, tmp_dir, browser, profile_name)
                 # Detect reset before scanning. If Chrome rebuilt its
                 # History DB, the max id drops and our cursor is stale.
                 src_max = state.source_max_id(copied, "visits")
@@ -237,29 +255,27 @@ def collect(central_db: sqlite3.Connection, tmp_dir: Path) -> dict[str, int]:
                     src_max, last_raw, offset, f"{browser}/{profile_name}"
                 )
                 max_raw = last_raw
-                rows_to_insert = []
+                batch: list[tuple] = []
+                inserted = 0
                 for v in _read_visits(copied, last_raw):
                     effective_id = v["source_visit_id"] + offset
-                    rows_to_insert.append((
+                    batch.append((
                         browser_id, v["url"], v["domain"], v["title"],
                         v["visited_at"], v["transition"], effective_id, now,
                     ))
                     if v["source_visit_id"] > max_raw:
                         max_raw = v["source_visit_id"]
-                if rows_to_insert:
-                    central_db.executemany(
-                        """
-                        INSERT OR IGNORE INTO visits
-                        (browser_id, url, domain, title, visited_at, transition,
-                         source_visit_id, ingested_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        rows_to_insert,
-                    )
+                    if len(batch) >= INSERT_BATCH_SIZE:
+                        _flush(central_db, batch)
+                        inserted += len(batch)
+                        batch.clear()
+                if batch:
+                    _flush(central_db, batch)
+                    inserted += len(batch)
                 state.save_state(central_db, browser_id, max_raw, offset, now)
                 central_db.commit()
-                counts[key] = len(rows_to_insert)
-                log.info("%s/%s: %d new visits", browser, profile_name, len(rows_to_insert))
+                counts[key] = inserted
+                log.info("%s/%s: %d new visits", browser, profile_name, inserted)
                 copied.unlink(missing_ok=True)
             except sqlite3.OperationalError as e:
                 log.warning("%s/%s: sqlite error: %s", browser, profile_name, e)

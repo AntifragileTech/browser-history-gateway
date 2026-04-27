@@ -2,11 +2,12 @@
 # Updated: 19:53 21-Apr-2026
 # Updated: 19:55 21-Apr-2026
 # Updated: 21:30 21-Apr-2026
-"""Collector for Safari.
+# Updated: 21:55 27-Apr-2026
+"""Collector for Safari (macOS only).
 
 Safari stores history in ~/Library/Safari/History.db. The directory is
-protected by macOS Full Disk Access — if the running process lacks FDA,
-the file will appear to exist but reads raise PermissionError / OperationalError.
+protected by macOS Full Disk Access — without FDA, the file appears to
+exist but reads raise PermissionError / OperationalError.
 
 Tables of interest:
   history_items  (id, url, domain_expansion, visit_count)
@@ -18,20 +19,20 @@ Timestamps: Cocoa reference date = seconds since 2001-01-01 00:00:00 UTC.
 from __future__ import annotations
 
 import logging
-import shutil
 import sqlite3
 import time
 from pathlib import Path
 from typing import Iterator
 from urllib.parse import urlparse
 
-from . import state
+from . import paths, state
 
 log = logging.getLogger(__name__)
 
-SAFARI_HISTORY = Path("~/Library/Safari/History.db").expanduser()
 # Cocoa reference date (2001-01-01) to unix epoch (1970-01-01) in seconds.
 COCOA_EPOCH_OFFSET = 978307200
+
+INSERT_BATCH_SIZE = 5000
 
 
 def cocoa_time_to_unix(cocoa_seconds: float) -> int:
@@ -47,10 +48,10 @@ def _domain_of(url: str) -> str:
         return ""
 
 
-def _copy_db(src: Path, dst_dir: Path) -> Path:
+def _backup_db(src: Path, dst_dir: Path) -> Path:
     """Snapshot Safari's live History.db using SQLite's online backup API.
 
-    `shutil.copy2` is unreliable here because Safari runs in WAL mode: the
+    `shutil.copy2` is unreliable because Safari runs in WAL mode: the
     main .db file can be incomplete without its -wal/-shm sidecars, and
     naming the sidecars correctly after copy is fragile. The backup API
     produces a fully self-contained snapshot regardless of WAL state.
@@ -109,14 +110,30 @@ def _read_visits(db_path: Path, since_source_id: int) -> Iterator[dict]:
         conn.close()
 
 
+def _flush(central_db: sqlite3.Connection, batch: list[tuple]) -> None:
+    if not batch:
+        return
+    central_db.executemany(
+        """
+        INSERT OR IGNORE INTO visits
+        (browser_id, url, domain, title, visited_at, transition,
+         source_visit_id, ingested_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        batch,
+    )
+
+
 def collect(central_db: sqlite3.Connection, tmp_dir: Path) -> dict[str, int]:
-    if not SAFARI_HISTORY.exists():
+    safari_db = paths.safari_history_path()
+    if safari_db is None or not safari_db.exists():
+        # Safari only exists on macOS — silently skip on other platforms.
         return {}
     now = int(time.time())
     try:
         browser_id = state.ensure_browser(central_db, "safari", "Default")
         last_raw, offset = state.get_state(central_db, browser_id)
-        copied = _copy_db(SAFARI_HISTORY, tmp_dir)
+        copied = _backup_db(safari_db, tmp_dir)
     except PermissionError:
         log.warning("safari: permission denied — grant Full Disk Access to terminal/python3")
         return {"safari:Default": 0}
@@ -131,34 +148,32 @@ def collect(central_db: sqlite3.Connection, tmp_dir: Path) -> dict[str, int]:
         src_max = last_raw  # don't trigger a spurious reset on read error
     last_raw, offset = state.detect_and_apply_reset(src_max, last_raw, offset, "safari/Default")
 
-    rows_to_insert = []
+    batch: list[tuple] = []
+    inserted = 0
     max_raw = last_raw
     try:
         for v in _read_visits(copied, last_raw):
             effective_id = v["source_visit_id"] + offset
-            rows_to_insert.append((
+            batch.append((
                 browser_id, v["url"], v["domain"], v["title"],
                 v["visited_at"], v["transition"], effective_id, now,
             ))
             if v["source_visit_id"] > max_raw:
                 max_raw = v["source_visit_id"]
+            if len(batch) >= INSERT_BATCH_SIZE:
+                _flush(central_db, batch)
+                inserted += len(batch)
+                batch.clear()
+        if batch:
+            _flush(central_db, batch)
+            inserted += len(batch)
     except sqlite3.OperationalError as e:
         log.warning("safari: read failed (FDA?): %s", e)
         return {"safari:Default": 0}
     finally:
         copied.unlink(missing_ok=True)
 
-    if rows_to_insert:
-        central_db.executemany(
-            """
-            INSERT OR IGNORE INTO visits
-            (browser_id, url, domain, title, visited_at, transition,
-             source_visit_id, ingested_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows_to_insert,
-        )
     state.save_state(central_db, browser_id, max_raw, offset, now)
     central_db.commit()
-    log.info("safari/Default: %d new visits", len(rows_to_insert))
-    return {"safari:Default": len(rows_to_insert)}
+    log.info("safari/Default: %d new visits", inserted)
+    return {"safari:Default": inserted}

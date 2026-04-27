@@ -1,0 +1,253 @@
+<!-- Created: 21:55 27-Apr-2026 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Welcome — Browser History Gateway</title>
+<style>
+  :root {
+    --fg: #e8e8e8; --bg: #111; --muted: #888; --accent: #5eb3ff;
+    --good: #4ade80; --warn: #facc15; --bad: #f87171;
+    --border: #222; --row: #181818;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", Segoe UI, system-ui, sans-serif;
+    color: var(--fg); background: var(--bg);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 60px 20px;
+  }
+  .wrap { width: 100%; max-width: 720px; }
+  h1 { font-size: 28px; margin: 0 0 8px; font-weight: 700; }
+  .lede { color: var(--muted); margin: 0 0 36px; font-size: 15px; }
+
+  .step {
+    background: var(--row); border: 1px solid var(--border);
+    border-radius: 12px; padding: 22px 26px; margin-bottom: 16px;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .step.active { border-color: var(--accent); }
+  .step.done   { border-color: var(--good); }
+  .step h2 {
+    font-size: 17px; font-weight: 600; margin: 0 0 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .step .dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #333; flex: none;
+  }
+  .step.active .dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: pulse 1.2s infinite; }
+  .step.done   .dot { background: var(--good); }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .4 } }
+
+  .step p, .step ul { color: var(--fg); margin: 0 0 12px; }
+  .step .hint { color: var(--muted); font-size: 13px; }
+
+  ul.browsers { list-style: none; padding: 0; margin: 0; }
+  ul.browsers li {
+    display: flex; gap: 10px; align-items: baseline;
+    padding: 6px 0; border-top: 1px solid #1f1f1f;
+  }
+  ul.browsers li:first-child { border-top: none; }
+  ul.browsers .name { font-weight: 600; min-width: 110px; }
+  ul.browsers .profiles { color: var(--muted); font-size: 13px; }
+
+  button.primary, a.primary {
+    display: inline-block;
+    background: var(--accent); color: #000;
+    border: none; border-radius: 6px;
+    padding: 10px 20px; font: inherit; font-weight: 600;
+    cursor: pointer; text-decoration: none;
+  }
+  button.primary:hover, a.primary:hover { filter: brightness(1.1); }
+  button.secondary {
+    background: transparent; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 9px 18px; cursor: pointer; font: inherit;
+    margin-left: 8px;
+  }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  progress { width: 100%; height: 8px; }
+
+  .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 3px;
+    font-size: 12px; background: #1a2e42; color: #9bc9ff;
+    margin-right: 4px;
+  }
+  code { background: #1a1a1a; padding: 1px 6px; border-radius: 3px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Welcome to Browser History Gateway 👋</h1>
+  <p class="lede">A one-time setup. We'll discover your browsers, ask for any
+     permissions we need, and run the first collection. About 30 seconds.</p>
+
+  <!-- Step 1: Full Disk Access (macOS only) -->
+  <section id="step-fda" class="step" hidden>
+    <h2><span class="dot"></span> Step 1 — Grant Full Disk Access</h2>
+    <p>To read Safari history (Chrome / Brave / Edge / Firefox don't need this),
+       toggle <strong>Browser History Gateway</strong> on under
+       <em>System Settings → Privacy &amp; Security → Full Disk Access</em>.
+       The status below will turn green automatically once macOS registers the grant.</p>
+    <p>
+      <button id="open-fda" class="primary">Open Settings</button>
+      <button id="skip-fda" class="secondary">Skip — Safari only</button>
+    </p>
+    <p class="hint" id="fda-status">Checking…</p>
+  </section>
+
+  <!-- Step 2: Browser discovery -->
+  <section id="step-discover" class="step">
+    <h2><span class="dot"></span> Step <span class="step-num">1</span> — Browsers detected</h2>
+    <ul class="browsers" id="browser-list">
+      <li><span class="name">Scanning…</span></li>
+    </ul>
+    <p class="hint" id="discover-summary"></p>
+  </section>
+
+  <!-- Step 3: First sync -->
+  <section id="step-sync" class="step">
+    <h2><span class="dot"></span> Step <span class="step-num">2</span> — First collection</h2>
+    <p id="sync-msg">Reading every browser's history database into your local archive…</p>
+    <progress id="sync-progress" max="100" value="0"></progress>
+    <p class="hint"><span id="visit-count">0</span> visits collected so far.</p>
+  </section>
+
+  <!-- Step 4: Done -->
+  <section id="step-done" class="step" hidden>
+    <h2><span class="dot"></span> All set 🎉</h2>
+    <p>Your local archive is ready. The collector keeps running in the background
+       (every 45–60 s, plus instantly whenever a browser writes to its history file)
+       so you'll never need to come back here.</p>
+    <p>
+      <a class="primary" href="/">Open search</a>
+    </p>
+  </section>
+</div>
+
+<script>
+  const platform = {{ platform | tojson }};
+  const isMac = platform === "darwin";
+
+  const stepFda      = document.getElementById('step-fda');
+  const stepDiscover = document.getElementById('step-discover');
+  const stepSync     = document.getElementById('step-sync');
+  const stepDone     = document.getElementById('step-done');
+  const fdaStatus    = document.getElementById('fda-status');
+  const browserList  = document.getElementById('browser-list');
+  const summary      = document.getElementById('discover-summary');
+  const syncMsg      = document.getElementById('sync-msg');
+  const syncProgress = document.getElementById('sync-progress');
+  const visitCount   = document.getElementById('visit-count');
+
+  // Show step 1 only on macOS; renumber the others on Windows / Linux.
+  if (isMac) {
+    stepFda.hidden = false;
+    document.querySelectorAll('.step-num').forEach((n, i) => n.textContent = i + 2);
+  } else {
+    document.querySelectorAll('.step-num').forEach((n, i) => n.textContent = i + 1);
+  }
+
+  document.getElementById('open-fda')?.addEventListener('click', () => {
+    // The macOS rumps app intercepts this URL and opens System Settings;
+    // a stock browser will get a no-op, which is fine.
+    window.location.href =
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
+  });
+  document.getElementById('skip-fda')?.addEventListener('click', () => {
+    stepFda.classList.remove('active');
+    stepFda.classList.add('done');
+    fdaStatus.textContent = "Skipped — Safari history will be left out.";
+    advanceFromFda();
+  });
+
+  let fdaResolved = !isMac; // non-Mac = always resolved
+  let firstSyncTriggered = false;
+  let pollHandle = null;
+
+  function advanceFromFda() {
+    fdaResolved = true;
+    stepDiscover.classList.add('active');
+    triggerFirstSyncIfReady();
+  }
+
+  function triggerFirstSyncIfReady() {
+    if (!fdaResolved || firstSyncTriggered) return;
+    firstSyncTriggered = true;
+    stepDiscover.classList.remove('active');
+    stepDiscover.classList.add('done');
+    stepSync.classList.add('active');
+    fetch('/api/sync-now', { method: 'POST' }).catch(() => {});
+  }
+
+  function renderBrowsers(list) {
+    if (!list.length) {
+      browserList.innerHTML =
+        '<li><span class="name">No supported browsers found.</span></li>';
+      summary.textContent = "If you have Chrome/Edge/Firefox installed, " +
+                            "make sure they've been opened at least once.";
+      return;
+    }
+    browserList.innerHTML = list.map(b =>
+      `<li>
+         <span class="name">${b.name}</span>
+         <span class="profiles">${b.profiles.length} profile${b.profiles.length===1?'':'s'} — ${b.profiles.join(', ')}</span>
+       </li>`
+    ).join('');
+    summary.textContent = `${list.length} browser${list.length===1?'':'s'} ready to collect from.`;
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/api/onboarding-status');
+      const s = await r.json();
+
+      // Step 1: FDA
+      if (isMac) {
+        if (s.fda_granted) {
+          stepFda.classList.remove('active');
+          stepFda.classList.add('done');
+          fdaStatus.textContent = "Full Disk Access granted ✓";
+          if (!fdaResolved) advanceFromFda();
+        } else {
+          stepFda.classList.add('active');
+          fdaStatus.textContent = "Waiting for grant…";
+        }
+      }
+
+      // Step 2: Browsers
+      renderBrowsers(s.browsers);
+      if (fdaResolved) triggerFirstSyncIfReady();
+
+      // Step 3: Sync progress
+      visitCount.textContent = s.visits.toLocaleString();
+      // Cheap heuristic: progress climbs as visits land. We don't know
+      // the total ahead of time, so cap at 95% until first_sync_done.
+      const v = s.visits;
+      if (s.first_sync_done) {
+        syncProgress.value = 100;
+        stepSync.classList.remove('active');
+        stepSync.classList.add('done');
+        stepDone.hidden = false;
+        syncMsg.textContent = "All recent visits ingested.";
+        clearInterval(pollHandle);
+      } else if (firstSyncTriggered) {
+        // Asymptotic curve: each batch moves us a little closer to 95%.
+        const cap = 95;
+        const pct = Math.min(cap, Math.round(cap * (1 - Math.exp(-v / 5000))));
+        syncProgress.value = pct;
+      }
+    } catch (e) {
+      // Server may be momentarily busy — try again next tick.
+    }
+  }
+
+  // Initial state + polling loop
+  stepDiscover.classList.add('active');
+  poll();
+  pollHandle = setInterval(poll, 1500);
+</script>
+</body>
+</html>
