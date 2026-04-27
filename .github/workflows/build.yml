@@ -115,12 +115,14 @@ jobs:
             Write-Error "EXE not produced"
             exit 1
           }
-          Get-Item "dist/Browser-History-Gateway.exe" | Format-List
+          # Rename to the suffix-tagged name used by README + Releases.
+          Move-Item "dist/Browser-History-Gateway.exe" "dist/Browser-History-Gateway-windows.exe"
+          Get-Item "dist/Browser-History-Gateway-windows.exe" | Format-List
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v5
         with:
           name: exe-windows
-          path: dist/Browser-History-Gateway.exe
+          path: dist/Browser-History-Gateway-windows.exe
           retention-days: 30
 
   release:
@@ -160,11 +162,12 @@ jobs:
           prerelease:   ${{ steps.meta.outputs.prerelease }}
           generate_release_notes: ${{ steps.meta.outputs.generate_notes }}
           body: |
-            Prebuilt downloads for every supported platform.
+            Prebuilt downloads for every supported platform. Direct
+            (always-current) links — these stay valid for every push to main:
 
-            - **macOS Apple Silicon (M1/M2/M3/M4)** -> `Browser-History-Gateway-arm64.dmg`
-            - **macOS Intel** -> `Browser-History-Gateway-intel.dmg`
-            - **Windows 10/11 (x64)** -> `Browser-History-Gateway-windows.exe`
+            - **macOS Apple Silicon (M1/M2/M3/M4)** -> [Browser-History-Gateway-arm64.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-arm64.dmg)
+            - **macOS Intel** -> [Browser-History-Gateway-intel.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-intel.dmg)
+            - **Windows 10/11 (x64)** -> [Browser-History-Gateway-windows.exe](https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-windows.exe)
 
             ### Install — macOS
             Open the DMG, drag **Browser History Gateway** into **Applications**.

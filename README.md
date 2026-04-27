@@ -16,15 +16,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-arm64.dmg">
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-arm64.dmg">
     <img src="https://img.shields.io/badge/Download-macOS%20Apple%20Silicon-5b8def?logo=apple&logoColor=white&style=for-the-badge" alt="Download for Apple Silicon" />
   </a>
   &nbsp;
-  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-intel.dmg">
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-intel.dmg">
     <img src="https://img.shields.io/badge/Download-macOS%20Intel-444?logo=apple&logoColor=white&style=for-the-badge" alt="Download for Intel Mac" />
   </a>
   &nbsp;
-  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-windows.exe">
+  <a href="https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-windows.exe">
     <img src="https://img.shields.io/badge/Download-Windows%2010%2F11-0078D4?logo=windows&logoColor=white&style=for-the-badge" alt="Download for Windows" />
   </a>
 </p>
@@ -57,9 +57,9 @@ Supports: **Chrome** (all profiles, with your custom profile names),
 
 1. Click the button above for your Mac's chip, or grab the DMG directly:
    - **Apple Silicon** (M1/M2/M3/M4) →
-     [Browser-History-Gateway-arm64.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-arm64.dmg)
+     [Browser-History-Gateway-arm64.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-arm64.dmg)
    - **Intel Mac** →
-     [Browser-History-Gateway-intel.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-intel.dmg)
+     [Browser-History-Gateway-intel.dmg](https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-intel.dmg)
 2. Open the DMG, drag **Browser History Gateway** into **Applications**.
 3. Double-click the app from Applications. macOS will block it on first
    launch ("can't be opened because Apple cannot check it for malicious
@@ -83,7 +83,7 @@ Supports: **Chrome** (all profiles, with your custom profile names),
 ## Install — Windows
 
 1. Click the **Windows** button above, or grab the EXE directly:
-   [Browser-History-Gateway-windows.exe](https://github.com/AntifragileTech/browser-history-gateway/releases/latest/download/Browser-History-Gateway-windows.exe)
+   [Browser-History-Gateway-windows.exe](https://github.com/AntifragileTech/browser-history-gateway/releases/download/latest/Browser-History-Gateway-windows.exe)
 2. Double-click the EXE. Windows SmartScreen will warn:
    "Windows protected your PC … publisher: Unknown". (We don't have a
    paid code-signing certificate.)
