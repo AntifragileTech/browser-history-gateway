@@ -62,7 +62,17 @@ jobs:
           ./build_app.sh --dmg --clean
       - name: Verify produced binary architecture
         run: |
-          BIN="dist/Browser History Gateway.app/Contents/MacOS/BrowserHistory"
+          # py2app names the executable after the entry script, so the
+          # path under MacOS/ may shift if we ever rename menubar_mac.py.
+          # Glob-discover the real executable to stay robust.
+          MACOS_DIR="dist/Browser History Gateway.app/Contents/MacOS"
+          BIN=$(find "$MACOS_DIR" -maxdepth 1 -type f -perm -111 | head -1)
+          if [ -z "$BIN" ]; then
+            echo "ERROR: no executable found in $MACOS_DIR"
+            ls -la "$MACOS_DIR" || true
+            exit 1
+          fi
+          echo "Found bundle executable: $BIN"
           file "$BIN"
           file "$BIN" | grep -q "${{ matrix.arch }}" || \
             (echo "ERROR: built binary is not ${{ matrix.arch }}"; exit 1)
